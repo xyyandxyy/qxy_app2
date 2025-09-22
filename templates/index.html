@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>社区地图信息查询</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Microsoft YaHei', sans-serif;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            gap: 20px;
+            height: calc(100vh - 120px);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+                height: auto;
+                gap: 15px;
+            }
+
+            .info-panel {
+                width: 100%;
+                order: -1;
+            }
+
+            .map-container {
+                min-height: 400px;
+            }
+
+            body {
+                padding: 10px;
+            }
+
+            h1 {
+                font-size: 20px;
+                margin-bottom: 15px;
+            }
+
+            .map-controls {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .zoom-btn {
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+        }
+
+        .map-container {
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            min-height: 600px;
+        }
+
+        .map-controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .zoom-btn {
+            padding: 8px 12px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .zoom-btn:hover {
+            background: #1976D2;
+        }
+
+        .zoom-level {
+            color: #666;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+
+        #map-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            position: relative;
+            background: #fafafa;
+        }
+
+        #map-svg {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .info-panel {
+            width: 300px;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            height: fit-content;
+        }
+
+        .community-area {
+            transition: fill 0.3s ease;
+        }
+
+        .community-area:hover {
+            fill: #4CAF50 !important;
+            opacity: 0.8;
+        }
+
+        .community-area.selected {
+            fill: #2196F3 !important;
+            opacity: 0.9;
+        }
+
+        .info-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 2px solid #2196F3;
+            padding-bottom: 10px;
+        }
+
+        .info-item {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .info-label {
+            font-weight: bold;
+            color: #555;
+        }
+
+        .info-value {
+            color: #333;
+            margin-left: 10px;
+        }
+
+        .no-data {
+            color: #999;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading {
+            color: #666;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .error {
+            color: #f44336;
+            text-align: center;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+    </style>
+</head>
+<body>
+    <h1>社区地图信息查询系统</h1>
+
+    <div class="container">
+        <div class="map-container">
+            <div class="map-controls">
+                <button class="zoom-btn" onclick="zoomIn()">放大 +</button>
+                <button class="zoom-btn" onclick="zoomOut()">缩小 -</button>
+                <button class="zoom-btn" onclick="resetZoom()">重置视图</button>
+                <button class="zoom-btn" onclick="fitToView()">适应窗口</button>
+                <span class="zoom-level">缩放: <span id="zoom-percentage">100%</span></span>
+                <div style="margin-left: 20px; border-left: 2px solid #ddd; padding-left: 20px;">
+                    <button class="zoom-btn" onclick="selectAll()" style="background: #4CAF50;">全选</button>
+                    <button class="zoom-btn" onclick="clearAll()" style="background: #f44336;">清空</button>
+                    <span class="zoom-level">已选: <span id="selected-count">0</span>个</span>
+                </div>
+            </div>
+            <div id="map-container">
+                <!-- SVG地图将在这里加载 -->
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <div class="info-title">社区统计信息</div>
+            <div id="community-info">
+                <div class="no-data">请点击地图上的社区/村查看详细信息，支持多选</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedCommunities = new Set();  // 存储多选的社区
+        let communityData = {};
+        let currentZoom = 1;
+        let mapSvg = null;
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSVGMap();
+            loadCommunityData();
+        });
+
+        // 缩放功能
+        function zoomIn() {
+            currentZoom = Math.min(currentZoom * 1.2, 5);
+            applyZoom();
+        }
+
+        function zoomOut() {
+            currentZoom = Math.max(currentZoom / 1.2, 0.1);
+            applyZoom();
+        }
+
+        function resetZoom() {
+            currentZoom = 1;
+            applyZoom();
+        }
+
+        function fitToView() {
+            if (mapSvg) {
+                const container = document.getElementById('map-container');
+                const containerRect = container.getBoundingClientRect();
+                const svgRect = mapSvg.getBoundingClientRect();
+
+                // 计算合适的缩放比例，留出一些边距
+                const scaleX = (containerRect.width * 0.9) / svgRect.width;
+                const scaleY = (containerRect.height * 0.9) / svgRect.height;
+                currentZoom = Math.min(scaleX, scaleY);
+
+                applyZoom();
+            }
+        }
+
+        function applyZoom() {
+            if (mapSvg) {
+                mapSvg.style.transform = `scale(${currentZoom})`;
+                updateZoomDisplay();
+            }
+        }
+
+        function updateZoomDisplay() {
+            const percentage = Math.round(currentZoom * 100);
+            document.getElementById('zoom-percentage').textContent = percentage + '%';
+        }
+
+        // 多选控制功能
+        function selectAll() {
+            selectedCommunities.clear();
+            const communityGroups = document.querySelectorAll('g[data-name*="社区"], g[data-name*="村"]');
+
+            communityGroups.forEach(group => {
+                const communityName = group.getAttribute('data-name');
+                if (communityData[communityName]) {
+                    selectedCommunities.add(communityName);
+                    updateCommunityVisualState(communityName, true);
+                }
+            });
+
+            updateAggregatedInfo();
+        }
+
+        function clearAll() {
+            selectedCommunities.clear();
+            const communityGroups = document.querySelectorAll('g[data-name*="社区"], g[data-name*="村"]');
+
+            communityGroups.forEach(group => {
+                const communityName = group.getAttribute('data-name');
+                updateCommunityVisualState(communityName, false);
+            });
+
+            updateAggregatedInfo();
+        }
+
+        function updateCommunityVisualState(communityName, isSelected) {
+            const group = document.querySelector(`g[data-name="${communityName}"]`);
+            if (group) {
+                const paths = group.querySelectorAll('path');
+                paths.forEach(path => {
+                    path.classList.toggle('selected', isSelected);
+                    path.style.fill = isSelected ? '#2196F3' : '#e0e0e0';
+                });
+            }
+        }
+
+        // 加载SVG地图
+        function loadSVGMap() {
+            fetch('/static/地图线稿.svg')
+                .then(response => response.text())
+                .then(svgText => {
+                    const mapContainer = document.getElementById('map-container');
+                    mapContainer.innerHTML = svgText;
+
+                    // 获取SVG元素引用
+                    mapSvg = mapContainer.querySelector('svg');
+                    if (mapSvg) {
+                        mapSvg.id = 'map-svg';
+
+                        // 初始化时自动适应窗口
+                        setTimeout(() => {
+                            fitToView();
+                        }, 100);
+                    }
+
+                    // 为每个社区区域添加点击事件
+                    const communityGroups = document.querySelectorAll('g[data-name*="社区"], g[data-name*="村"]');
+                    communityGroups.forEach(group => {
+                        const communityName = group.getAttribute('data-name');
+
+                        // 为所有路径添加样式类
+                        const paths = group.querySelectorAll('path');
+                        paths.forEach(path => {
+                            path.classList.add('community-area');
+                            path.style.fill = '#e0e0e0';
+                            path.style.cursor = 'pointer';
+                        });
+
+                        // 添加点击事件
+                        group.addEventListener('click', function() {
+                            toggleCommunitySelection(communityName);
+                        });
+
+                        // 添加悬停提示
+                        group.setAttribute('title', communityName);
+                    });
+
+                    // 添加窗口大小改变时的响应
+                    window.addEventListener('resize', function() {
+                        setTimeout(fitToView, 100);
+                    });
+                })
+                .catch(error => {
+                    console.error('加载SVG地图失败:', error);
+                    document.getElementById('map-container').innerHTML =
+                        '<div class="error">地图加载失败，请检查文件是否存在</div>';
+                });
+        }
+
+        // 加载所有社区数据
+        function loadCommunityData() {
+            fetch('/api/communities')
+                .then(response => response.json())
+                .then(data => {
+                    communityData = data;
+                    console.log('社区数据加载完成:', data);
+                })
+                .catch(error => {
+                    console.error('加载社区数据失败:', error);
+                });
+        }
+
+        // 切换社区选择状态
+        function toggleCommunitySelection(communityName) {
+            if (selectedCommunities.has(communityName)) {
+                selectedCommunities.delete(communityName);
+                updateCommunityVisualState(communityName, false);
+            } else {
+                selectedCommunities.add(communityName);
+                updateCommunityVisualState(communityName, true);
+            }
+
+            updateAggregatedInfo();
+        }
+
+        // 更新聚合信息显示
+        function updateAggregatedInfo() {
+            const infoDiv = document.getElementById('community-info');
+            const selectedCountSpan = document.getElementById('selected-count');
+
+            selectedCountSpan.textContent = selectedCommunities.size;
+
+            if (selectedCommunities.size === 0) {
+                infoDiv.innerHTML = '<div class="no-data">请点击地图上的社区/村查看详细信息，支持多选</div>';
+                return;
+            }
+
+            if (selectedCommunities.size === 1) {
+                // 单选时显示详细信息
+                const communityName = Array.from(selectedCommunities)[0];
+                showSingleCommunityInfo(communityName);
+                return;
+            }
+
+            // 多选时显示聚合信息
+            showAggregatedInfo();
+        }
+
+        // 显示单个社区信息
+        function showSingleCommunityInfo(communityName) {
+            const infoDiv = document.getElementById('community-info');
+
+            if (communityData[communityName]) {
+                const data = communityData[communityName];
+
+                let infoHTML = `
+                    <div class="info-item">
+                        <span class="info-label">名称:</span>
+                        <span class="info-value">${data.name}</span>
+                    </div>
+                `;
+
+                // 使用动态列名显示数据
+                if (data.columns) {
+                    for (const [colName, colData] of Object.entries(data.columns)) {
+                        if (colData.raw_data !== '0' && colData.raw_data !== 'nan') {
+                            infoHTML += `
+                                <div class="info-item">
+                                    <span class="info-label">${colName}:</span>
+                                    <span class="info-value">${colData.raw_data} (人数: ${colData.people_count})</span>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    // 计算总人数
+                    const totalPeople = Object.values(data.columns).reduce((sum, col) => sum + col.people_count, 0);
+
+                    infoHTML += `
+                        <div class="info-item" style="border-top: 2px solid #ddd; margin-top: 10px; padding-top: 10px;">
+                            <span class="info-label">总人数:</span>
+                            <span class="info-value" style="font-weight: bold; color: #2196F3;">${totalPeople}人</span>
+                        </div>
+                    `;
+                }
+
+                infoDiv.innerHTML = infoHTML;
+            }
+        }
+
+        // 显示聚合信息
+        function showAggregatedInfo() {
+            const infoDiv = document.getElementById('community-info');
+            const selectedNames = Array.from(selectedCommunities);
+
+            // 计算聚合数据
+            const aggregatedData = {};
+            let totalPeople = 0;
+
+            // 获取所有可能的列名
+            const allColumns = new Set();
+            selectedNames.forEach(name => {
+                const data = communityData[name];
+                if (data && data.columns) {
+                    Object.keys(data.columns).forEach(col => allColumns.add(col));
+                }
+            });
+
+            // 聚合每个列的数据
+            allColumns.forEach(colName => {
+                aggregatedData[colName] = {
+                    total_people: 0,
+                    communities: []
+                };
+
+                selectedNames.forEach(name => {
+                    const data = communityData[name];
+                    if (data && data.columns && data.columns[colName]) {
+                        const colData = data.columns[colName];
+                        aggregatedData[colName].total_people += colData.people_count;
+                        if (colData.people_count > 0) {
+                            aggregatedData[colName].communities.push({
+                                name: name,
+                                count: colData.people_count,
+                                raw: colData.raw_data
+                            });
+                        }
+                    }
+                });
+
+                totalPeople += aggregatedData[colName].total_people;
+            });
+
+            // 生成显示HTML
+            let infoHTML = `
+                <div class="info-item" style="background: #e3f2fd; border-left: 4px solid #2196F3;">
+                    <span class="info-label">聚合统计 (${selectedNames.length}个地区):</span>
+                    <span class="info-value">${selectedNames.join('、')}</span>
+                </div>
+            `;
+
+            // 显示各类别的聚合统计
+            for (const [colName, colData] of Object.entries(aggregatedData)) {
+                if (colData.total_people > 0) {
+                    infoHTML += `
+                        <div class="info-item">
+                            <span class="info-label">${colName}:</span>
+                            <span class="info-value" style="font-weight: bold;">${colData.total_people}人</span>
+                            <div style="margin-top: 5px; font-size: 12px; color: #666;">
+                                ${colData.communities.map(c => `${c.name}: ${c.count}人`).join(' | ')}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            infoHTML += `
+                <div class="info-item" style="border-top: 2px solid #ddd; margin-top: 10px; padding-top: 10px; background: #f3e5f5;">
+                    <span class="info-label">总计人数:</span>
+                    <span class="info-value" style="font-weight: bold; color: #9C27B0; font-size: 18px;">${totalPeople}人</span>
+                </div>
+            `;
+
+            infoDiv.innerHTML = infoHTML;
+        }
+
+    </script>
+</body>
+</html>

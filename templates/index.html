@@ -117,6 +117,85 @@
             transition: transform 0.3s ease;
         }
 
+        /* 地图上的信息显示样式 */
+        .map-info-overlay {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #2196F3;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-family: 'Microsoft YaHei', sans-serif;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 1000;
+            max-width: 180px;
+            min-width: 140px;
+            cursor: move;
+            user-select: none;
+            transition: box-shadow 0.2s ease;
+        }
+
+        .map-info-overlay:hover {
+            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+        }
+
+        .map-info-overlay.dragging {
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+            transform: rotate(2deg);
+        }
+
+        .map-info-title {
+            font-weight: bold;
+            font-size: 13px;
+            color: #2196F3;
+            margin-bottom: 4px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 2px;
+            cursor: move;
+        }
+
+        .map-info-item {
+            margin: 2px 0;
+            font-size: 11px;
+            color: #333;
+        }
+
+        .map-info-label {
+            color: #666;
+            font-weight: normal;
+        }
+
+        .map-info-value {
+            color: #333;
+            font-weight: bold;
+        }
+
+        .map-info-total {
+            margin-top: 4px;
+            padding-top: 4px;
+            border-top: 1px solid #ddd;
+            font-weight: bold;
+            color: #2196F3;
+            font-size: 12px;
+        }
+
+        /* 引线样式 */
+        .map-leader-line {
+            stroke: #2196F3;
+            stroke-width: 2;
+            fill: none;
+            pointer-events: none;
+            stroke-dasharray: 5,3;
+            opacity: 0.8;
+        }
+
+        .map-leader-dot {
+            fill: #2196F3;
+            stroke: white;
+            stroke-width: 1.5;
+            pointer-events: none;
+        }
+
         .info-panel {
             width: 300px;
             background: white;
@@ -227,6 +306,9 @@
         let communityData = {};
         let currentZoom = 1;
         let mapSvg = null;
+        let infoBoxes = new Map(); // 存储信息框的位置信息
+        let dragState = { isDragging: false, element: null, offsetX: 0, offsetY: 0 };
+        let linesOverlay = null; // 引线覆盖层
 
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -269,6 +351,11 @@
             if (mapSvg) {
                 mapSvg.style.transform = `scale(${currentZoom})`;
                 updateZoomDisplay();
+
+                // 缩放时更新地图信息显示
+                setTimeout(() => {
+                    updateAggregatedInfo();
+                }, 100);
             }
         }
 
@@ -316,6 +403,371 @@
             }
         }
 
+        // 初始化引线覆盖层
+        function initLinesOverlay() {
+            if (!linesOverlay) {
+                linesOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                linesOverlay.id = 'lines-overlay';
+                linesOverlay.style.position = 'absolute';
+                linesOverlay.style.top = '0';
+                linesOverlay.style.left = '0';
+                linesOverlay.style.width = '100%';
+                linesOverlay.style.height = '100%';
+                linesOverlay.style.pointerEvents = 'none';
+                linesOverlay.style.zIndex = '999';
+                document.getElementById('map-container').appendChild(linesOverlay);
+            }
+        }
+
+        // 清除所有引线
+        function clearAllLines() {
+            if (linesOverlay) {
+                // 完全清空引线覆盖层
+                while (linesOverlay.firstChild) {
+                    linesOverlay.removeChild(linesOverlay.firstChild);
+                }
+            }
+        }
+
+        // 清除特定社区的引线
+        function clearCommunityLine(communityName) {
+            if (linesOverlay) {
+                const groups = linesOverlay.querySelectorAll(`g[data-community="${communityName}"]`);
+                groups.forEach(group => group.remove());
+            }
+        }
+
+        // 清除所有地图上的信息显示
+        function clearMapInfoOverlays() {
+            const container = document.getElementById('map-container');
+
+            // 只清除不在选中列表中的信息框
+            const existingOverlays = container.querySelectorAll('.map-info-overlay');
+            existingOverlays.forEach(overlay => {
+                const communityName = overlay.getAttribute('data-community');
+                if (!selectedCommunities.has(communityName)) {
+                    overlay.remove();
+                    infoBoxes.delete(communityName);
+                    clearCommunityLine(communityName);
+                }
+            });
+        }
+
+        // 完全清除所有信息框和引线
+        function clearAllInfoOverlays() {
+            const container = document.getElementById('map-container');
+            const existingOverlays = container.querySelectorAll('.map-info-overlay');
+            existingOverlays.forEach(overlay => overlay.remove());
+            clearAllLines();
+            infoBoxes.clear();
+        }
+
+        // 获取SVG元素的中心点
+        function getElementCenter(element) {
+            try {
+                const bbox = element.getBBox();
+                const svgRect = mapSvg.getBoundingClientRect();
+                const containerRect = document.getElementById('map-container').getBoundingClientRect();
+
+                // 计算缩放比例
+                const scaleX = svgRect.width / mapSvg.viewBox.baseVal.width;
+                const scaleY = svgRect.height / mapSvg.viewBox.baseVal.height;
+
+                // 计算中心点在容器中的位置
+                const centerX = (bbox.x + bbox.width / 2) * scaleX * currentZoom + (containerRect.width - svgRect.width) / 2;
+                const centerY = (bbox.y + bbox.height / 2) * scaleY * currentZoom + (containerRect.height - svgRect.height) / 2;
+
+                return { x: centerX, y: centerY };
+            } catch (e) {
+                console.error('Error getting element center:', e);
+                return { x: 100, y: 100 };
+            }
+        }
+
+        // 检查两个矩形是否重叠
+        function isOverlapping(rect1, rect2) {
+            return !(rect1.right < rect2.left ||
+                    rect2.right < rect1.left ||
+                    rect1.bottom < rect2.top ||
+                    rect2.bottom < rect1.top);
+        }
+
+        // 找到不重叠的位置
+        function findNonOverlappingPosition(preferredX, preferredY, width, height, containerRect, excludeCommunity = null) {
+            const margin = 10;
+            const testRect = {
+                left: preferredX,
+                top: preferredY,
+                right: preferredX + width,
+                bottom: preferredY + height
+            };
+
+            // 检查是否与现有信息框重叠，但排除指定的社区（通常是自身）
+            let hasOverlap = false;
+            for (let [key, info] of infoBoxes) {
+                if (key === excludeCommunity) continue;  // 跳过指定的社区
+                if (isOverlapping(testRect, info.rect)) {
+                    hasOverlap = true;
+                    break;
+                }
+            }
+
+            if (!hasOverlap) {
+                return { x: preferredX, y: preferredY };
+            }
+
+            // 如果重叠，尝试在右侧找位置
+            const positions = [
+                // 右侧区域
+                { x: containerRect.width - width - margin, y: preferredY },
+                { x: containerRect.width - width - margin, y: preferredY + 100 },
+                { x: containerRect.width - width - margin, y: preferredY - 100 },
+                // 左侧区域
+                { x: margin, y: preferredY },
+                { x: margin, y: preferredY + 100 },
+                { x: margin, y: preferredY - 100 },
+                // 下方区域
+                { x: preferredX, y: containerRect.height - height - margin },
+                { x: preferredX + 100, y: containerRect.height - height - margin },
+                { x: preferredX - 100, y: containerRect.height - height - margin },
+            ];
+
+            for (let pos of positions) {
+                if (pos.x < margin || pos.y < margin ||
+                    pos.x + width > containerRect.width - margin ||
+                    pos.y + height > containerRect.height - margin) {
+                    continue;
+                }
+
+                const testPos = {
+                    left: pos.x,
+                    top: pos.y,
+                    right: pos.x + width,
+                    bottom: pos.y + height
+                };
+
+                let overlap = false;
+                for (let [key, info] of infoBoxes) {
+                    if (key === excludeCommunity) continue;  // 跳过指定的社区
+                    if (isOverlapping(testPos, info.rect)) {
+                        overlap = true;
+                        break;
+                    }
+                }
+
+                if (!overlap) {
+                    return pos;
+                }
+            }
+
+            // 如果都重叠，返回一个堆叠位置
+            return {
+                x: containerRect.width - width - margin - (infoBoxes.size * 20),
+                y: margin + (infoBoxes.size * 20)
+            };
+        }
+
+        // 创建地图上的信息显示
+        function createMapInfoOverlay(communityName, center) {
+            const data = communityData[communityName];
+            if (!data || !data.columns) return null;
+
+            // 检查是否已经存在信息框
+            const container = document.getElementById('map-container');
+            const existingOverlay = container.querySelector(`.map-info-overlay[data-community="${communityName}"]`);
+            if (existingOverlay) {
+                // 如果已经存在，直接返回
+                return existingOverlay;
+            }
+
+            const containerRect = container.getBoundingClientRect();
+            const overlay = document.createElement('div');
+            overlay.className = 'map-info-overlay';
+            overlay.setAttribute('data-community', communityName);
+
+            let totalPeople = 0;
+            let infoHTML = `<div class="map-info-title">${data.name}</div>`;
+
+            // 显示有数据的项目
+            for (const [colName, colData] of Object.entries(data.columns)) {
+                if (colData.people_count > 0) {
+                    infoHTML += `
+                        <div class="map-info-item">
+                            <span class="map-info-label">${colName}:</span>
+                            <span class="map-info-value">${colData.people_count}人</span>
+                        </div>
+                    `;
+                    totalPeople += colData.people_count;
+                }
+            }
+
+            if (totalPeople > 0) {
+                infoHTML += `<div class="map-info-total">总计: ${totalPeople}人</div>`;
+            }
+
+            overlay.innerHTML = infoHTML;
+
+            // 计算尺寸
+            const overlayWidth = 160;
+            const overlayHeight = 90;
+
+            // 优先放在右侧
+            let preferredX = containerRect.width - overlayWidth - 20;
+            let preferredY = center.y - overlayHeight / 2;
+
+            // 如果中心点在右侧，则放左侧
+            if (center.x > containerRect.width * 0.7) {
+                preferredX = 20;
+            }
+
+            // 确保在容器边界内
+            preferredY = Math.max(10, Math.min(preferredY, containerRect.height - overlayHeight - 10));
+
+            // 找到不重叠的位置
+            const position = findNonOverlappingPosition(preferredX, preferredY, overlayWidth, overlayHeight, containerRect, communityName);
+
+            overlay.style.left = position.x + 'px';
+            overlay.style.top = position.y + 'px';
+
+            // 存储位置信息
+            const existingInfo = infoBoxes.get(communityName);
+            infoBoxes.set(communityName, {
+                element: overlay,
+                rect: {
+                    left: position.x,
+                    top: position.y,
+                    right: position.x + overlayWidth,
+                    bottom: position.y + overlayHeight
+                },
+                center: center,
+                clickPosition: existingInfo ? existingInfo.clickPosition : center,  // 保留点击位置
+                isManuallyMoved: false  // 添加手动移动标记
+            });
+
+            // 添加拖拽事件
+            makeDraggable(overlay, communityName);
+
+            container.appendChild(overlay);
+
+            // 创建引线 - 使用点击位置作为起点
+            const lineStartPoint = existingInfo && existingInfo.clickPosition ? existingInfo.clickPosition : center;
+            createLeaderLine(lineStartPoint, { x: position.x + overlayWidth / 2, y: position.y + overlayHeight / 2 }, communityName);
+
+            return overlay;
+        }
+
+        // 创建引线
+        function createLeaderLine(fromCenter, toCenter, communityName) {
+            if (!linesOverlay) {
+                initLinesOverlay();
+            }
+
+            // 先清除该社区的现有引线
+            clearCommunityLine(communityName);
+
+            // 简化坐标计算 - 直接使用容器坐标
+            const fromX = fromCenter.x;
+            const fromY = fromCenter.y;
+            const toX = toCenter.x;
+            const toY = toCenter.y;
+
+            // 创建引线组，方便管理
+            const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            group.setAttribute("data-community", communityName);
+
+            // 创建引线
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", fromX);
+            line.setAttribute("y1", fromY);
+            line.setAttribute("x2", toX);
+            line.setAttribute("y2", toY);
+            line.setAttribute("stroke", "#2196F3");
+            line.setAttribute("stroke-width", "2");
+            line.setAttribute("stroke-dasharray", "5,3");
+            line.setAttribute("opacity", "0.8");
+
+            // 创建起点圆点
+            const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            dot.setAttribute("cx", fromX);
+            dot.setAttribute("cy", fromY);
+            dot.setAttribute("r", "4");
+            dot.setAttribute("fill", "#2196F3");
+            dot.setAttribute("stroke", "white");
+            dot.setAttribute("stroke-width", "1.5");
+
+            group.appendChild(line);
+            group.appendChild(dot);
+            linesOverlay.appendChild(group);
+        }
+
+        // 使元素可拖拽
+        function makeDraggable(element, communityName) {
+            element.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                dragState.isDragging = true;
+                dragState.element = element;
+                dragState.communityName = communityName;
+                dragState.offsetX = e.clientX - element.offsetLeft;
+                dragState.offsetY = e.clientY - element.offsetTop;
+
+                element.classList.add('dragging');
+                document.body.style.cursor = 'grabbing';
+            });
+        }
+
+        // 添加全局鼠标事件
+        document.addEventListener('mousemove', function(e) {
+            if (dragState.isDragging && dragState.element) {
+                const container = document.getElementById('map-container');
+                const containerRect = container.getBoundingClientRect();
+
+                let newX = e.clientX - dragState.offsetX;
+                let newY = e.clientY - dragState.offsetY;
+
+                // 限制在容器边界内
+                const elementRect = dragState.element.getBoundingClientRect();
+                newX = Math.max(5, Math.min(newX, containerRect.width - elementRect.width - 5));
+                newY = Math.max(5, Math.min(newY, containerRect.height - elementRect.height - 5));
+
+                dragState.element.style.left = newX + 'px';
+                dragState.element.style.top = newY + 'px';
+
+                // 更新存储的位置信息
+                const info = infoBoxes.get(dragState.communityName);
+                if (info) {
+                    info.rect.left = newX;
+                    info.rect.top = newY;
+                    info.rect.right = newX + elementRect.width;
+                    info.rect.bottom = newY + elementRect.height;
+
+                    // 更新引线 - 使用存储的点击位置作为起点
+                    const newCenter = {
+                        x: newX + elementRect.width / 2,
+                        y: newY + elementRect.height / 2
+                    };
+                    const lineStartPoint = info.clickPosition || info.center;
+                    createLeaderLine(lineStartPoint, newCenter, dragState.communityName);
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', function(e) {
+            if (dragState.isDragging) {
+                dragState.element.classList.remove('dragging');
+
+                // 标记该信息框为手动移动过的
+                const info = infoBoxes.get(dragState.communityName);
+                if (info) {
+                    info.isManuallyMoved = true;
+                }
+
+                dragState.isDragging = false;
+                dragState.element = null;
+                dragState.communityName = null;
+                document.body.style.cursor = 'default';
+            }
+        });
+
         // 加载SVG地图
         function loadSVGMap() {
             fetch('/static/地图线稿.svg')
@@ -349,8 +801,16 @@
                         });
 
                         // 添加点击事件
-                        group.addEventListener('click', function() {
-                            toggleCommunitySelection(communityName);
+                        group.addEventListener('click', function(e) {
+                            // 计算点击位置相对于容器的坐标
+                            const containerRect = document.getElementById('map-container').getBoundingClientRect();
+                            const svgRect = mapSvg.getBoundingClientRect();
+
+                            // 计算相对于容器的点击位置
+                            const clickX = e.clientX - containerRect.left;
+                            const clickY = e.clientY - containerRect.top;
+
+                            toggleCommunitySelection(communityName, { x: clickX, y: clickY });
                         });
 
                         // 添加悬停提示
@@ -383,13 +843,24 @@
         }
 
         // 切换社区选择状态
-        function toggleCommunitySelection(communityName) {
+        function toggleCommunitySelection(communityName, clickPosition = null) {
             if (selectedCommunities.has(communityName)) {
                 selectedCommunities.delete(communityName);
                 updateCommunityVisualState(communityName, false);
             } else {
                 selectedCommunities.add(communityName);
                 updateCommunityVisualState(communityName, true);
+
+                // 如果提供了点击位置，存储它
+                if (clickPosition) {
+                    const existingInfo = infoBoxes.get(communityName);
+                    if (existingInfo) {
+                        existingInfo.clickPosition = clickPosition;
+                    } else {
+                        // 如果信息框还不存在，创建一个临时存储
+                        infoBoxes.set(communityName, { clickPosition: clickPosition });
+                    }
+                }
             }
 
             updateAggregatedInfo();
@@ -402,10 +873,36 @@
 
             selectedCountSpan.textContent = selectedCommunities.size;
 
+            // 清除地图上的信息显示
+            clearMapInfoOverlays();
+
             if (selectedCommunities.size === 0) {
                 infoDiv.innerHTML = '<div class="no-data">请点击地图上的社区/村查看详细信息，支持多选</div>';
                 return;
             }
+
+            // 显示地图上的信息
+            selectedCommunities.forEach(communityName => {
+                const group = document.querySelector(`g[data-name="${communityName}"]`);
+                if (group && communityData[communityName]) {
+                    // 检查是否已经存在且被手动移动过
+                    const existingInfo = infoBoxes.get(communityName);
+                    if (existingInfo && existingInfo.isManuallyMoved) {
+                        // 如果信息框被手动移动过，跳过当前循环继续处理下一个
+                        return;
+                    }
+
+                    // 使用点击位置作为引线起点，如果没有则使用区域中心
+                    let center;
+                    if (existingInfo && existingInfo.clickPosition) {
+                        center = existingInfo.clickPosition;
+                    } else {
+                        center = getElementCenter(group);
+                    }
+
+                    createMapInfoOverlay(communityName, center);
+                }
+            });
 
             if (selectedCommunities.size === 1) {
                 // 单选时显示详细信息

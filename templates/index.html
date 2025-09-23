@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>社区地图信息查询</title>
+    <!-- html2canvas库用于截图功能 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -83,11 +85,27 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.2s;
         }
 
         .zoom-btn:hover {
             background: #1976D2;
+            transform: translateY(-1px);
+        }
+
+        .zoom-btn:active {
+            transform: translateY(0);
+        }
+
+        .zoom-btn:disabled {
+            background: #cccccc !important;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .zoom-btn:disabled:hover {
+            background: #cccccc !important;
+            transform: none;
         }
 
         .zoom-level {
@@ -121,35 +139,36 @@
         .map-info-overlay {
             position: absolute;
             background: rgba(255, 255, 255, 0.95);
-            border: 2px solid #2196F3;
+            border: 2px solid #9C27B0;
             border-radius: 8px;
             padding: 8px 12px;
             font-size: 12px;
             font-family: 'Microsoft YaHei', sans-serif;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 12px rgba(156, 39, 176, 0.3);
             z-index: 1000;
             max-width: 180px;
             min-width: 140px;
             cursor: move;
             user-select: none;
-            transition: box-shadow 0.2s ease;
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
         }
 
         .map-info-overlay:hover {
-            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+            box-shadow: 0 6px 16px rgba(156, 39, 176, 0.4);
+            transform: translateY(-2px);
         }
 
         .map-info-overlay.dragging {
-            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
-            transform: rotate(2deg);
+            box-shadow: 0 8px 20px rgba(156, 39, 176, 0.5);
+            transform: rotate(2deg) scale(1.05);
         }
 
         .map-info-title {
             font-weight: bold;
             font-size: 13px;
-            color: #2196F3;
+            color: #9C27B0;
             margin-bottom: 4px;
-            border-bottom: 1px solid #ddd;
+            border-bottom: 1px solid #E1BEE7;
             padding-bottom: 2px;
             cursor: move;
         }
@@ -173,9 +192,9 @@
         .map-info-total {
             margin-top: 4px;
             padding-top: 4px;
-            border-top: 1px solid #ddd;
+            border-top: 1px solid #E1BEE7;
             font-weight: bold;
-            color: #2196F3;
+            color: #9C27B0;
             font-size: 12px;
         }
 
@@ -206,17 +225,21 @@
         }
 
         .community-area {
-            transition: fill 0.3s ease;
+            transition: fill 0.3s ease, stroke 0.3s ease;
         }
 
         .community-area:hover {
-            fill: #4CAF50 !important;
+            fill: #FF9800 !important;
             opacity: 0.8;
+            stroke: #F57C00;
+            stroke-width: 2px;
         }
 
         .community-area.selected {
-            fill: #2196F3 !important;
+            fill: #4CAF50 !important;
             opacity: 0.9;
+            stroke: #2E7D32;
+            stroke-width: 2px;
         }
 
         .info-title {
@@ -224,7 +247,7 @@
             font-weight: bold;
             margin-bottom: 15px;
             color: #333;
-            border-bottom: 2px solid #2196F3;
+            border-bottom: 2px solid #9C27B0;
             padding-bottom: 10px;
         }
 
@@ -267,12 +290,86 @@
         h1 {
             text-align: center;
             color: #333;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
+        }
+
+        .file-upload-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .file-upload-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-input-label {
+            background: #2196F3;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+            display: inline-block;
+        }
+
+        .file-input-label:hover {
+            background: #1976D2;
+        }
+
+        .file-status {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .file-status.success {
+            color: #4CAF50;
+        }
+
+        .file-status.error {
+            color: #f44336;
+        }
+
+        .upload-progress {
+            color: #FF9800;
         }
     </style>
 </head>
 <body>
     <h1>社区地图信息查询系统</h1>
+
+    <!-- 文件上传区域 -->
+    <div class="file-upload-section">
+        <div class="file-upload-area">
+            <div class="file-input-wrapper">
+                <input type="file" id="excel-file-input" class="file-input" accept=".xlsx,.xls">
+                <label for="excel-file-input" class="file-input-label">📁 选择Excel文件</label>
+            </div>
+            <div id="file-status" class="file-status">
+                当前文件: <span id="current-filename">加载中...</span>
+                (<span id="community-count">-</span>个社区/村)
+            </div>
+        </div>
+    </div>
 
     <div class="container">
         <div class="map-container">
@@ -313,8 +410,90 @@
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadSVGMap();
+            loadCurrentFileInfo();
             loadCommunityData();
+            setupFileUpload();
         });
+
+        // 设置文件上传功能
+        function setupFileUpload() {
+            const fileInput = document.getElementById('excel-file-input');
+            fileInput.addEventListener('change', handleFileUpload);
+        }
+
+        // 处理文件上传
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const fileStatus = document.getElementById('file-status');
+            fileStatus.className = 'file-status upload-progress';
+            fileStatus.innerHTML = '上传中...';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    fileStatus.className = 'file-status success';
+                    fileStatus.innerHTML = result.message;
+
+                    // 更新当前文件信息
+                    document.getElementById('current-filename').textContent = result.filename;
+                    document.getElementById('community-count').textContent = result.community_count;
+
+                    // 重新加载社区数据
+                    await loadCommunityData();
+
+                    // 清空当前选择
+                    clearAll();
+
+                    console.log('文件上传成功，数据已更新');
+                } else {
+                    throw new Error(result.error || '上传失败');
+                }
+            } catch (error) {
+                fileStatus.className = 'file-status error';
+                fileStatus.innerHTML = `上传失败: ${error.message}`;
+                console.error('文件上传失败:', error);
+            }
+
+            // 清空文件输入，允许重新选择同一文件
+            event.target.value = '';
+        }
+
+        // 加载当前文件信息
+        async function loadCurrentFileInfo() {
+            try {
+                const response = await fetch('/api/current-file');
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('current-filename').textContent = result.filename;
+                    document.getElementById('community-count').textContent = result.community_count;
+
+                    if (result.file_exists) {
+                        document.getElementById('file-status').className = 'file-status success';
+                    } else {
+                        document.getElementById('file-status').className = 'file-status error';
+                    }
+                } else {
+                    document.getElementById('file-status').className = 'file-status error';
+                    document.getElementById('file-status').innerHTML = '获取文件信息失败';
+                }
+            } catch (error) {
+                console.error('获取当前文件信息失败:', error);
+                document.getElementById('file-status').className = 'file-status error';
+                document.getElementById('file-status').innerHTML = '获取文件信息失败';
+            }
+        }
 
         // 缩放功能
         function zoomIn() {
@@ -389,6 +568,9 @@
                 updateCommunityVisualState(communityName, false);
             });
 
+            // 完全清理所有信息框和引线
+            clearAllInfoOverlays();
+
             updateAggregatedInfo();
         }
 
@@ -398,7 +580,15 @@
                 const paths = group.querySelectorAll('path');
                 paths.forEach(path => {
                     path.classList.toggle('selected', isSelected);
-                    path.style.fill = isSelected ? '#2196F3' : '#e0e0e0';
+                    if (isSelected) {
+                        path.style.fill = '#4CAF50';
+                        path.style.stroke = '#2E7D32';
+                        path.style.strokeWidth = '2px';
+                    } else {
+                        path.style.fill = '#e0e0e0';
+                        path.style.stroke = '';
+                        path.style.strokeWidth = '';
+                    }
                 });
             }
         }
@@ -887,8 +1077,8 @@
                 if (group && communityData[communityName]) {
                     // 检查是否已经存在且被手动移动过
                     const existingInfo = infoBoxes.get(communityName);
-                    if (existingInfo && existingInfo.isManuallyMoved) {
-                        // 如果信息框被手动移动过，跳过当前循环继续处理下一个
+                    if (existingInfo && existingInfo.isManuallyMoved && existingInfo.element && existingInfo.element.parentNode) {
+                        // 如果信息框被手动移动过且还在DOM中，跳过创建
                         return;
                     }
 
@@ -1032,6 +1222,7 @@
 
             infoDiv.innerHTML = infoHTML;
         }
+
 
     </script>
 </body>

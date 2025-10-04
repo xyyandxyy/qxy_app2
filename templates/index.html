@@ -352,6 +352,144 @@
         .upload-progress {
             color: #FF9800;
         }
+
+        .chart-controls {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #ddd;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .chart-controls label {
+            font-size: 14px;
+            color: #666;
+            font-weight: bold;
+        }
+
+        .chart-controls select {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .chart-btn {
+            padding: 8px 16px;
+            background: #9C27B0;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .chart-btn:hover {
+            background: #7B1FA2;
+        }
+
+        .chart-btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .chart-status {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .column-checkbox {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .column-checkbox:hover {
+            background: #e9ecef;
+        }
+
+        .column-checkbox.selected {
+            background: #667EEA;
+            color: white;
+            border-color: #5A67D8;
+        }
+
+        .column-checkbox input[type="checkbox"] {
+            margin: 0;
+            transform: scale(0.8);
+        }
+
+        /* 图例样式 */
+        .chart-legend {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1001;
+            max-width: 250px;
+            font-family: 'Microsoft YaHei', sans-serif;
+            display: none;
+            cursor: move;
+            user-select: none;
+            transition: box-shadow 0.2s ease;
+        }
+
+        .chart-legend:hover {
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .chart-legend.dragging {
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            transform: scale(1.02);
+        }
+
+        .chart-legend.visible {
+            display: block;
+        }
+
+        .legend-title {
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 6px 0;
+            font-size: 12px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            margin-right: 8px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .legend-label {
+            color: #555;
+            flex-grow: 1;
+        }
     </style>
 </head>
 <body>
@@ -382,8 +520,31 @@
                 <div style="margin-left: 20px; border-left: 2px solid #ddd; padding-left: 20px;">
                     <button class="zoom-btn" onclick="selectAll()" style="background: #4CAF50;">全选</button>
                     <button class="zoom-btn" onclick="clearAll()" style="background: #f44336;">清空</button>
+                    <button class="zoom-btn" onclick="toggleAllInfoBoxes()" id="toggle-info-btn" style="background: #FF9800;">隐藏信息框</button>
                     <span class="zoom-level">已选: <span id="selected-count">0</span>个</span>
                 </div>
+            </div>
+
+            <!-- 柱状图控制区域 -->
+            <div class="chart-controls">
+                <label for="chart-mode-select">图表模式:</label>
+                <select id="chart-mode-select">
+                    <option value="bar">柱状图</option>
+                    <option value="pie">饼图</option>
+                </select>
+
+                <label for="chart-column-select">数据选择:</label>
+                <div id="column-checkboxes" style="display: inline-flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <!-- 动态生成的复选框将在这里显示 -->
+                </div>
+
+                <button id="draw-chart-btn" class="chart-btn" onclick="drawChartForSelected()" disabled>
+                    📊 绘制图表
+                </button>
+                <button id="clear-charts-btn" class="chart-btn" onclick="clearAllCharts()" style="background: #f44336;">
+                    🗑️ 清除图表
+                </button>
+                <span class="chart-status" id="chart-status">请先选择社区和数据列</span>
             </div>
             <div id="map-container">
                 <!-- SVG地图将在这里加载 -->
@@ -398,14 +559,33 @@
         </div>
     </div>
 
+    <!-- 图表图例 -->
+    <div id="chart-legend" class="chart-legend">
+        <div class="legend-title">数据图例</div>
+        <div id="legend-content">
+            <!-- 动态生成图例项 -->
+        </div>
+    </div>
+
     <script>
         let selectedCommunities = new Set();  // 存储多选的社区
         let communityData = {};
         let currentZoom = 1;
         let mapSvg = null;
         let infoBoxes = new Map(); // 存储信息框的位置信息
-        let dragState = { isDragging: false, element: null, offsetX: 0, offsetY: 0 };
+        let dragState = {
+            isDragging: false,
+            element: null,
+            offsetX: 0,
+            offsetY: 0,
+            isLegend: false  // 标记是否是图例拖拽
+        };
         let linesOverlay = null; // 引线覆盖层
+        let chartsOverlay = null; // 柱状图覆盖层
+        let availableColumns = []; // 可用的数据列
+        let infoBoxesVisible = true; // 信息框显示状态
+        let hiddenInfoBoxes = new Map(); // 存储隐藏的信息框数据
+        let selectedColumns = new Set(); // 选中的数据列
 
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -419,6 +599,10 @@
         function setupFileUpload() {
             const fileInput = document.getElementById('excel-file-input');
             fileInput.addEventListener('change', handleFileUpload);
+
+            // 添加图表模式选择监听器
+            const modeSelect = document.getElementById('chart-mode-select');
+            modeSelect.addEventListener('change', updateChartStatus);
         }
 
         // 处理文件上传
@@ -534,6 +718,8 @@
                 // 缩放时更新地图信息显示
                 setTimeout(() => {
                     updateAggregatedInfo();
+                    // 重新绘制柱状图以适应新的缩放级别
+                    redrawExistingCharts();
                 }, 100);
             }
         }
@@ -557,6 +743,8 @@
             });
 
             updateAggregatedInfo();
+            // 重新绘制柱状图以反映全选变化
+            redrawExistingCharts();
         }
 
         function clearAll() {
@@ -570,6 +758,15 @@
 
             // 完全清理所有信息框和引线
             clearAllInfoOverlays();
+
+            // 清除所有柱状图
+            clearAllCharts();
+
+            // 重置信息框显示状态
+            infoBoxesVisible = true;
+            const toggleBtn = document.getElementById('toggle-info-btn');
+            toggleBtn.textContent = '隐藏信息框';
+            toggleBtn.style.background = '#FF9800';
 
             updateAggregatedInfo();
         }
@@ -609,6 +806,22 @@
             }
         }
 
+        // 初始化柱状图覆盖层
+        function initChartsOverlay() {
+            if (!chartsOverlay) {
+                chartsOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                chartsOverlay.id = 'charts-overlay';
+                chartsOverlay.style.position = 'absolute';
+                chartsOverlay.style.top = '0';
+                chartsOverlay.style.left = '0';
+                chartsOverlay.style.width = '100%';
+                chartsOverlay.style.height = '100%';
+                chartsOverlay.style.pointerEvents = 'none';
+                chartsOverlay.style.zIndex = '998';
+                document.getElementById('map-container').appendChild(chartsOverlay);
+            }
+        }
+
         // 清除所有引线
         function clearAllLines() {
             if (linesOverlay) {
@@ -619,12 +832,453 @@
             }
         }
 
+        // 清除所有柱状图
+        function clearAllCharts() {
+            if (chartsOverlay) {
+                while (chartsOverlay.firstChild) {
+                    chartsOverlay.removeChild(chartsOverlay.firstChild);
+                }
+            }
+            updateChartStatus();
+            // 隐藏图例
+            const legendElement = document.getElementById('chart-legend');
+            legendElement.classList.remove('visible');
+        }
+
+        // 重新绘制现有图表（适应缩放或选择变化）
+        function redrawExistingCharts() {
+            // 如果有选中的数据列且有选中的社区，重新绘制图表
+            if (selectedColumns.size > 0 && selectedCommunities.size > 0) {
+                drawChartForSelected();
+            }
+        }
+
+        // 为选中的社区绘制图表
+        function drawChartForSelected() {
+            if (selectedColumns.size === 0) {
+                alert('请先选择要绘制的数据列');
+                return;
+            }
+
+            if (selectedCommunities.size === 0) {
+                alert('请先选择社区区域');
+                return;
+            }
+
+            const chartMode = document.getElementById('chart-mode-select').value;
+
+            // 清除现有图表
+            clearAllCharts();
+
+            // 初始化图表覆盖层
+            initChartsOverlay();
+
+            if (chartMode === 'pie') {
+                drawPieCharts();
+            } else {
+                drawBarCharts();
+            }
+
+            updateChartStatus();
+            updateLegend(); // 更新图例
+        }
+
+        // 更新图例显示
+        function updateLegend() {
+            const legendElement = document.getElementById('chart-legend');
+            const legendContent = document.getElementById('legend-content');
+
+            if (selectedColumns.size === 0 || selectedCommunities.size === 0) {
+                legendElement.classList.remove('visible');
+                return;
+            }
+
+            // 获取配色方案
+            const colors = [
+                '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
+                '#FFEAA7', '#DDA0DD', '#F8BBD0', '#FFB74D'
+            ];
+
+            legendContent.innerHTML = '';
+
+            // 为每个选中的数据列创建图例项
+            Array.from(selectedColumns).forEach((columnName, index) => {
+                const color = colors[index % colors.length];
+
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+
+                const colorBox = document.createElement('div');
+                colorBox.className = 'legend-color';
+                colorBox.style.backgroundColor = color;
+
+                const label = document.createElement('div');
+                label.className = 'legend-label';
+                label.textContent = columnName;
+
+                legendItem.appendChild(colorBox);
+                legendItem.appendChild(label);
+                legendContent.appendChild(legendItem);
+            });
+
+            legendElement.classList.add('visible');
+
+            // 为图例添加拖拽功能
+            setupLegendDragging(legendElement);
+        }
+
+        // 绘制多列柱状图
+        function drawBarCharts() {
+            // 为每个选中的社区绘制多列柱状图
+            selectedCommunities.forEach(communityName => {
+                const data = communityData[communityName];
+                if (data && data.columns) {
+                    const group = document.querySelector(`g[data-name="${communityName}"]`);
+                    if (group) {
+                        // 获取社区的中心点或点击位置
+                        const existingInfo = infoBoxes.get(communityName);
+                        let position;
+                        if (existingInfo && existingInfo.clickPosition) {
+                            position = existingInfo.clickPosition;
+                        } else {
+                            position = getElementCenter(group);
+                        }
+
+                        drawMultiColumnBarChart(communityName, position, Array.from(selectedColumns), data);
+                    }
+                }
+            });
+        }
+
+        // 绘制饼图
+        function drawPieCharts() {
+            selectedCommunities.forEach(communityName => {
+                const data = communityData[communityName];
+                if (data && data.columns) {
+                    const group = document.querySelector(`g[data-name="${communityName}"]`);
+                    if (group) {
+                        const existingInfo = infoBoxes.get(communityName);
+                        let position;
+                        if (existingInfo && existingInfo.clickPosition) {
+                            position = existingInfo.clickPosition;
+                        } else {
+                            position = getElementCenter(group);
+                        }
+
+                        drawPieChart(communityName, position, Array.from(selectedColumns), data);
+                    }
+                }
+            });
+        }
+
+        // 绘制单个社区的饼图
+        function drawPieChart(communityName, position, columns, data) {
+            const radius = 30 * currentZoom;
+            const innerRadius = radius * 0.3; // 创建环形图效果
+
+            // 多列配色方案 - 避免与地图选中的绿色(#4CAF50)冲突
+            const colors = [
+                '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
+                '#FFEAA7', '#DDA0DD', '#F8BBD0', '#FFB74D'
+            ];
+
+            // 收集数据
+            const pieData = [];
+            let total = 0;
+
+            columns.forEach((columnName, index) => {
+                if (data.columns[columnName]) {
+                    const value = data.columns[columnName].people_count;
+                    if (value > 0) {
+                        pieData.push({
+                            label: columnName,
+                            value: value,
+                            color: colors[index % colors.length]
+                        });
+                        total += value;
+                    }
+                }
+            });
+
+            if (total === 0 || pieData.length === 0) return;
+
+            // 创建饼图组
+            const chartGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            chartGroup.setAttribute("data-community", communityName);
+
+            let currentAngle = -90; // 从顶部开始
+
+            // 绘制饼图扇形
+            pieData.forEach((item, index) => {
+                const percentage = item.value / total;
+                const angle = percentage * 360;
+
+                if (angle < 1) return; // 忽略太小的扇形
+
+                const startAngle = (currentAngle * Math.PI) / 180;
+                const endAngle = ((currentAngle + angle) * Math.PI) / 180;
+
+                // 计算路径坐标
+                const x1 = position.x + innerRadius * Math.cos(startAngle);
+                const y1 = position.y + innerRadius * Math.sin(startAngle);
+                const x2 = position.x + radius * Math.cos(startAngle);
+                const y2 = position.y + radius * Math.sin(startAngle);
+                const x3 = position.x + radius * Math.cos(endAngle);
+                const y3 = position.y + radius * Math.sin(endAngle);
+                const x4 = position.x + innerRadius * Math.cos(endAngle);
+                const y4 = position.y + innerRadius * Math.sin(endAngle);
+
+                const largeArcFlag = angle > 180 ? 1 : 0;
+
+                // 创建扇形路径
+                const pathData = [
+                    `M ${x1} ${y1}`, // 移动到内圆起点
+                    `L ${x2} ${y2}`, // 连到外圆起点
+                    `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x3} ${y3}`, // 外圆弧
+                    `L ${x4} ${y4}`, // 连到内圆终点
+                    `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${x1} ${y1}`, // 内圆弧
+                    'Z' // 闭合路径
+                ].join(' ');
+
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("d", pathData);
+                path.setAttribute("fill", item.color);
+                path.setAttribute("stroke", "white");
+                path.setAttribute("stroke-width", "2");
+                path.setAttribute("opacity", "0.8");
+
+                // 添加鼠标悬停效果
+                path.addEventListener('mouseenter', function() {
+                    this.setAttribute("opacity", "1");
+                    this.setAttribute("stroke-width", "3");
+                });
+                path.addEventListener('mouseleave', function() {
+                    this.setAttribute("opacity", "0.8");
+                    this.setAttribute("stroke-width", "2");
+                });
+
+                chartGroup.appendChild(path);
+
+                // 添加标签
+                if (percentage > 0.05) { // 只为大于5%的扇形添加标签
+                    const labelAngle = (currentAngle + angle / 2) * Math.PI / 180;
+                    const labelRadius = (radius + innerRadius) / 2;
+                    const labelX = position.x + labelRadius * Math.cos(labelAngle);
+                    const labelY = position.y + labelRadius * Math.sin(labelAngle);
+
+                    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    label.setAttribute("x", labelX);
+                    label.setAttribute("y", labelY);
+                    label.setAttribute("text-anchor", "middle");
+                    label.setAttribute("dominant-baseline", "central");
+                    label.setAttribute("font-size", Math.max(8 * currentZoom, 6));
+                    label.setAttribute("font-family", "Microsoft YaHei");
+                    label.setAttribute("fill", "white");
+                    label.setAttribute("font-weight", "bold");
+                    label.textContent = item.value;
+
+                    chartGroup.appendChild(label);
+                }
+
+                currentAngle += angle;
+            });
+
+            // 添加中心标签（社区名称）
+            const centerLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            centerLabel.setAttribute("x", position.x);
+            centerLabel.setAttribute("y", position.y);
+            centerLabel.setAttribute("text-anchor", "middle");
+            centerLabel.setAttribute("dominant-baseline", "central");
+            centerLabel.setAttribute("font-size", Math.max(10 * currentZoom, 8));
+            centerLabel.setAttribute("font-family", "Microsoft YaHei");
+            centerLabel.setAttribute("fill", "#333");
+            centerLabel.setAttribute("font-weight", "bold");
+            centerLabel.textContent = communityName.replace('社区', '').replace('村', '');
+
+            chartGroup.appendChild(centerLabel);
+
+            chartsOverlay.appendChild(chartGroup);
+        }
+
+        // 绘制多列柱状图
+        function drawMultiColumnBarChart(communityName, position, columns, data) {
+            const maxBarHeight = 50; // 减小高度以适应多列显示
+            const minBarHeight = 6;
+            const barWidth = 8; // 减小柱子宽度
+            const barSpacing = 2; // 柱子间距
+
+            // 计算所有选中列的最大值用于归一化
+            let maxValue = 0;
+            columns.forEach(columnName => {
+                if (data.columns[columnName]) {
+                    selectedCommunities.forEach(name => {
+                        const communityData_item = communityData[name];
+                        if (communityData_item && communityData_item.columns && communityData_item.columns[columnName]) {
+                            maxValue = Math.max(maxValue, communityData_item.columns[columnName].people_count);
+                        }
+                    });
+                }
+            });
+
+            if (maxValue === 0) return;
+
+            // 多列配色方案 - 避免与地图选中的绿色(#4CAF50)冲突
+            const colors = [
+                { main: '#FF6B6B', light: '#FF8E8E', dark: '#E74C3C' },  // 红色系
+                { main: '#4ECDC4', light: '#7BDBD2', dark: '#26A69A' },  // 青绿色系
+                { main: '#45B7D1', light: '#6BB6FF', dark: '#2196F3' },  // 蓝色系
+                { main: '#96CEB4', light: '#ABEBC6', dark: '#58D68D' },  // 薄荷绿系(较浅,与选中绿色区分)
+                { main: '#FFEAA7', light: '#FDCB6E', dark: '#F39C12' },  // 黄色系
+                { main: '#DDA0DD', light: '#E6B3E6', dark: '#BA68C8' },  // 紫色系
+                { main: '#F8BBD0', light: '#FCE4EC', dark: '#E91E63' },  // 粉色系
+                { main: '#FFB74D', light: '#FFCC80', dark: '#FF9800' }   // 橙色系
+            ];
+
+            const totalWidth = columns.length * barWidth + (columns.length - 1) * barSpacing;
+            const startX = position.x - totalWidth / 2;
+
+            // 为每个数据列绘制柱子
+            columns.forEach((columnName, index) => {
+                if (data.columns[columnName]) {
+                    const value = data.columns[columnName].people_count;
+                    const normalizedHeight = (value / maxValue) * maxBarHeight;
+                    const barHeight = Math.max(normalizedHeight * currentZoom, 4);
+                    const scaledBarWidth = barWidth * currentZoom;
+
+                    const barX = startX + index * (scaledBarWidth + barSpacing * currentZoom);
+                    const colorScheme = colors[index % colors.length];
+
+                    // 创建柱状图组
+                    const chartGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                    chartGroup.setAttribute("data-community", communityName);
+                    chartGroup.setAttribute("data-column", columnName);
+
+                    // 绘制柱子
+                    const bar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    bar.setAttribute("x", barX);
+                    bar.setAttribute("y", position.y - barHeight);
+                    bar.setAttribute("width", scaledBarWidth);
+                    bar.setAttribute("height", barHeight);
+                    bar.setAttribute("fill", colorScheme.main);
+                    bar.setAttribute("stroke", colorScheme.dark);
+                    bar.setAttribute("stroke-width", "1");
+                    bar.setAttribute("rx", "2");
+
+                    // 数值标签
+                    if (value > 0) {
+                        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        label.setAttribute("x", barX + scaledBarWidth / 2);
+                        label.setAttribute("y", position.y - barHeight - 3);
+                        label.setAttribute("text-anchor", "middle");
+                        label.setAttribute("font-size", Math.max(8 * currentZoom, 6));
+                        label.setAttribute("font-family", "Microsoft YaHei");
+                        label.setAttribute("fill", colorScheme.dark);
+                        label.setAttribute("font-weight", "bold");
+                        label.textContent = value;
+                        chartGroup.appendChild(label);
+                    }
+
+                    chartGroup.appendChild(bar);
+                    chartsOverlay.appendChild(chartGroup);
+                }
+            });
+
+            // 添加社区名称标签
+            const nameLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            nameLabel.setAttribute("x", position.x);
+            nameLabel.setAttribute("y", position.y + 15);
+            nameLabel.setAttribute("text-anchor", "middle");
+            nameLabel.setAttribute("font-size", Math.max(9 * currentZoom, 7));
+            nameLabel.setAttribute("font-family", "Microsoft YaHei");
+            nameLabel.setAttribute("fill", "#333");
+            nameLabel.setAttribute("font-weight", "500");
+            nameLabel.textContent = communityName.replace('社区', '').replace('村', '');
+
+            const nameGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            nameGroup.appendChild(nameLabel);
+            chartsOverlay.appendChild(nameGroup);
+        }
+
         // 清除特定社区的引线
         function clearCommunityLine(communityName) {
             if (linesOverlay) {
                 const groups = linesOverlay.querySelectorAll(`g[data-community="${communityName}"]`);
                 groups.forEach(group => group.remove());
             }
+        }
+
+        // 更新柱状图控制状态
+        function updateChartStatus() {
+            const drawBtn = document.getElementById('draw-chart-btn');
+            const statusElement = document.getElementById('chart-status');
+
+            const hasSelection = selectedCommunities.size > 0;
+            const hasColumns = selectedColumns.size > 0;
+            const hasCharts = chartsOverlay && chartsOverlay.children.length > 0;
+
+            drawBtn.disabled = !hasSelection || !hasColumns;
+
+            if (hasCharts) {
+                const chartMode = document.getElementById('chart-mode-select').value === 'pie' ? '饼图' : '柱状图';
+                const columnNames = Array.from(selectedColumns).join('、');
+                statusElement.textContent = `已绘制 ${selectedCommunities.size} 个社区的 ${columnNames} ${chartMode}`;
+            } else if (!hasSelection) {
+                statusElement.textContent = '请先选择社区';
+            } else if (!hasColumns) {
+                statusElement.textContent = '请选择数据列';
+            } else {
+                statusElement.textContent = '可以绘制图表';
+            }
+        }
+
+        // 更新数据列选择器
+        function updateColumnSelector() {
+            const checkboxContainer = document.getElementById('column-checkboxes');
+
+            // 清除现有复选框
+            checkboxContainer.innerHTML = '';
+
+            // 获取所有可用的数据列
+            const columns = new Set();
+            Object.values(communityData).forEach(data => {
+                if (data.columns) {
+                    Object.keys(data.columns).forEach(col => {
+                        if (col !== '社区名称' && col !== '名称') { // 排除名称列
+                            columns.add(col);
+                        }
+                    });
+                }
+            });
+
+            availableColumns = Array.from(columns).sort();
+
+            // 创建复选框
+            availableColumns.forEach(column => {
+                const label = document.createElement('label');
+                label.className = 'column-checkbox';
+                label.dataset.column = column;
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = column;
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        selectedColumns.add(column);
+                        label.classList.add('selected');
+                    } else {
+                        selectedColumns.delete(column);
+                        label.classList.remove('selected');
+                    }
+                    updateChartStatus();
+                });
+
+                const span = document.createElement('span');
+                span.textContent = column;
+
+                label.appendChild(checkbox);
+                label.appendChild(span);
+                checkboxContainer.appendChild(label);
+            });
         }
 
         // 清除所有地图上的信息显示
@@ -643,6 +1297,87 @@
             });
         }
 
+        // 全局隐藏/显示所有信息框和引线
+        function toggleAllInfoBoxes() {
+            const toggleBtn = document.getElementById('toggle-info-btn');
+            const container = document.getElementById('map-container');
+
+            if (infoBoxesVisible) {
+                // 隐藏所有信息框和引线
+                const existingOverlays = container.querySelectorAll('.map-info-overlay');
+                existingOverlays.forEach(overlay => {
+                    const communityName = overlay.getAttribute('data-community');
+                    // 保存信息框数据到隐藏列表
+                    const infoData = infoBoxes.get(communityName);
+                    if (infoData) {
+                        hiddenInfoBoxes.set(communityName, infoData);
+                    }
+                    overlay.style.display = 'none';
+                });
+
+                // 隐藏所有引线
+                if (linesOverlay) {
+                    linesOverlay.style.display = 'none';
+                }
+
+                infoBoxesVisible = false;
+                toggleBtn.textContent = '显示信息框';
+                toggleBtn.style.background = '#4CAF50';
+            } else {
+                // 显示所有信息框和引线
+                const existingOverlays = container.querySelectorAll('.map-info-overlay');
+                existingOverlays.forEach(overlay => {
+                    overlay.style.display = 'block';
+                });
+
+                // 显示所有引线
+                if (linesOverlay) {
+                    linesOverlay.style.display = 'block';
+                }
+
+                infoBoxesVisible = true;
+                toggleBtn.textContent = '隐藏信息框';
+                toggleBtn.style.background = '#FF9800';
+            }
+        }
+
+        // 隐藏单个信息框和引线（双击功能）
+        function hideInfoBox(communityName) {
+            const container = document.getElementById('map-container');
+            const overlay = container.querySelector(`.map-info-overlay[data-community="${communityName}"]`);
+
+            if (overlay) {
+                // 保存信息框数据
+                const infoData = infoBoxes.get(communityName);
+                if (infoData) {
+                    infoData.isHidden = true;
+                }
+
+                // 隐藏信息框
+                overlay.style.display = 'none';
+
+                // 隐藏对应的引线
+                clearCommunityLine(communityName);
+
+                console.log(`已隐藏 ${communityName} 的信息框`);
+            }
+        }
+
+        // 显示单个信息框和引线
+        function showInfoBox(communityName) {
+            const infoData = infoBoxes.get(communityName);
+            if (infoData && infoData.isHidden) {
+                infoData.isHidden = false;
+
+                // 重新创建信息框和引线
+                const group = document.querySelector(`g[data-name="${communityName}"]`);
+                if (group && selectedCommunities.has(communityName)) {
+                    const center = infoData.clickPosition || getElementCenter(group);
+                    createMapInfoOverlay(communityName, center);
+                }
+            }
+        }
+
         // 完全清除所有信息框和引线
         function clearAllInfoOverlays() {
             const container = document.getElementById('map-container');
@@ -650,6 +1385,7 @@
             existingOverlays.forEach(overlay => overlay.remove());
             clearAllLines();
             infoBoxes.clear();
+            hiddenInfoBoxes.clear();
         }
 
         // 获取SVG元素的中心点
@@ -834,8 +1570,15 @@
                 isManuallyMoved: false  // 添加手动移动标记
             });
 
-            // 添加拖拽事件
+            // 添加拖拽事件和双击隐藏事件
             makeDraggable(overlay, communityName);
+
+            // 添加双击隐藏功能
+            overlay.addEventListener('dblclick', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                hideInfoBox(communityName);
+            });
 
             container.appendChild(overlay);
 
@@ -905,38 +1648,62 @@
             });
         }
 
+        // 设置图例拖拽功能
+        function setupLegendDragging(legendElement) {
+            legendElement.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                dragState.isDragging = true;
+                dragState.element = legendElement;
+                dragState.isLegend = true;
+                dragState.offsetX = e.clientX - legendElement.offsetLeft;
+                dragState.offsetY = e.clientY - legendElement.offsetTop;
+
+                legendElement.classList.add('dragging');
+                document.body.style.cursor = 'grabbing';
+            });
+        }
+
         // 添加全局鼠标事件
         document.addEventListener('mousemove', function(e) {
             if (dragState.isDragging && dragState.element) {
-                const container = document.getElementById('map-container');
-                const containerRect = container.getBoundingClientRect();
-
                 let newX = e.clientX - dragState.offsetX;
                 let newY = e.clientY - dragState.offsetY;
 
-                // 限制在容器边界内
-                const elementRect = dragState.element.getBoundingClientRect();
-                newX = Math.max(5, Math.min(newX, containerRect.width - elementRect.width - 5));
-                newY = Math.max(5, Math.min(newY, containerRect.height - elementRect.height - 5));
+                if (dragState.isLegend) {
+                    // 图例拖拽 - 限制在窗口范围内
+                    const elementRect = dragState.element.getBoundingClientRect();
+                    newX = Math.max(5, Math.min(newX, window.innerWidth - elementRect.width - 5));
+                    newY = Math.max(5, Math.min(newY, window.innerHeight - elementRect.height - 5));
+                } else {
+                    // 信息框拖拽 - 限制在地图容器内
+                    const container = document.getElementById('map-container');
+                    const containerRect = container.getBoundingClientRect();
+                    const elementRect = dragState.element.getBoundingClientRect();
+                    newX = Math.max(5, Math.min(newX, containerRect.width - elementRect.width - 5));
+                    newY = Math.max(5, Math.min(newY, containerRect.height - elementRect.height - 5));
+                }
 
                 dragState.element.style.left = newX + 'px';
                 dragState.element.style.top = newY + 'px';
 
-                // 更新存储的位置信息
-                const info = infoBoxes.get(dragState.communityName);
-                if (info) {
-                    info.rect.left = newX;
-                    info.rect.top = newY;
-                    info.rect.right = newX + elementRect.width;
-                    info.rect.bottom = newY + elementRect.height;
+                // 更新存储的位置信息（仅对信息框）
+                if (!dragState.isLegend) {
+                    const info = infoBoxes.get(dragState.communityName);
+                    if (info) {
+                        const elementRect = dragState.element.getBoundingClientRect();
+                        info.rect.left = newX;
+                        info.rect.top = newY;
+                        info.rect.right = newX + elementRect.width;
+                        info.rect.bottom = newY + elementRect.height;
 
-                    // 更新引线 - 使用存储的点击位置作为起点
-                    const newCenter = {
-                        x: newX + elementRect.width / 2,
-                        y: newY + elementRect.height / 2
-                    };
-                    const lineStartPoint = info.clickPosition || info.center;
-                    createLeaderLine(lineStartPoint, newCenter, dragState.communityName);
+                        // 更新引线 - 使用存储的点击位置作为起点
+                        const newCenter = {
+                            x: newX + elementRect.width / 2,
+                            y: newY + elementRect.height / 2
+                        };
+                        const lineStartPoint = info.clickPosition || info.center;
+                        createLeaderLine(lineStartPoint, newCenter, dragState.communityName);
+                    }
                 }
             }
         });
@@ -945,15 +1712,19 @@
             if (dragState.isDragging) {
                 dragState.element.classList.remove('dragging');
 
-                // 标记该信息框为手动移动过的
-                const info = infoBoxes.get(dragState.communityName);
-                if (info) {
-                    info.isManuallyMoved = true;
+                // 标记该信息框为手动移动过的（仅对信息框）
+                if (!dragState.isLegend) {
+                    const info = infoBoxes.get(dragState.communityName);
+                    if (info) {
+                        info.isManuallyMoved = true;
+                    }
                 }
 
+                // 重置拖拽状态
                 dragState.isDragging = false;
                 dragState.element = null;
                 dragState.communityName = null;
+                dragState.isLegend = false;
                 document.body.style.cursor = 'default';
             }
         });
@@ -1026,6 +1797,10 @@
                 .then(data => {
                     communityData = data;
                     console.log('社区数据加载完成:', data);
+
+                    // 更新数据列选择器
+                    updateColumnSelector();
+                    updateChartStatus();
                 })
                 .catch(error => {
                     console.error('加载社区数据失败:', error);
@@ -1054,6 +1829,10 @@
             }
 
             updateAggregatedInfo();
+            updateChartStatus(); // 更新柱状图状态
+
+            // 重新绘制柱状图以反映选择变化
+            redrawExistingCharts();
         }
 
         // 更新聚合信息显示
@@ -1077,6 +1856,12 @@
                 if (group && communityData[communityName]) {
                     // 检查是否已经存在且被手动移动过
                     const existingInfo = infoBoxes.get(communityName);
+
+                    // 如果信息框被单独隐藏或者全局隐藏，跳过创建
+                    if ((existingInfo && existingInfo.isHidden) || !infoBoxesVisible) {
+                        return;
+                    }
+
                     if (existingInfo && existingInfo.isManuallyMoved && existingInfo.element && existingInfo.element.parentNode) {
                         // 如果信息框被手动移动过且还在DOM中，跳过创建
                         return;

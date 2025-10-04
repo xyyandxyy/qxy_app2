@@ -58,12 +58,13 @@ def process_data_value(value):
 def load_excel_data(file_path=None):
     """读取Excel文件并返回社区/村数据"""
     try:
-        # 如果没有指定文件路径，使用默认文件或session中的文件
+        # 如果没有指定文件路径，使用session中的文件
         if file_path is None:
             if 'current_excel_file' in session:
                 file_path = Path(session['current_excel_file'])
             else:
-                file_path = APP_ROOT / 'demo_data.xlsx'
+                # 没有上传文件，返回空数据
+                return {}
         else:
             file_path = Path(file_path)
 
@@ -194,7 +195,15 @@ def upload_file():
 def get_current_file():
     """获取当前使用的Excel文件信息"""
     try:
-        current_file = session.get('current_excel_file', str(APP_ROOT / 'demo_data.xlsx'))
+        if 'current_excel_file' not in session:
+            return jsonify({
+                'filename': None,
+                'community_count': 0,
+                'file_exists': False,
+                'message': '请先上传Excel文件'
+            })
+
+        current_file = session['current_excel_file']
         current_file_path = Path(current_file)
         filename = current_file_path.name
 

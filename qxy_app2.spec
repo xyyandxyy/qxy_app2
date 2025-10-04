@@ -1,5 +1,4 @@
 # -*- mode: python ; coding: utf-8 -*-
-
 block_cipher = None
 
 a = Analysis(
@@ -53,11 +52,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=true,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='/Users/xyy/git_syn/utils/qxy_app2/favicon.ico',
+    icon='C:/Users/xyy/Downloads/qxy_app2/qxy_app2/favicon.ico',
 )

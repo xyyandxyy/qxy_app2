@@ -10,27 +10,20 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import quote
 from werkzeug.utils import secure_filename
+import io
+import uuid
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'  # 用于session管理
+app.secret_key = str(uuid.uuid4())  # 用于session管理
 
-# 获取应用根目录（支持打包后的exe）
-def get_app_root():
-    if getattr(sys, 'frozen', False):
-        # 运行在pyinstaller打包的exe中
-        return Path(sys.executable).parent
-    else:
-        # 运行在开发环境中
-        return Path(__file__).parent
-
-APP_ROOT = get_app_root()
-
-# 配置上传文件夹 - 使用pathlib处理路径
-UPLOAD_FOLDER = APP_ROOT / 'uploads'
+# 配置文件处理 - 使用内存模式避免Windows路径问题
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 
-# 确保上传文件夹存在
-UPLOAD_FOLDER.mkdir(exist_ok=True)
+# 全局变量存储当前文件数据
+current_file_data = None  # 存储文件数据在内存中
+current_filename = None   # 存储原始文件名
+community_data_cache = {}  # 缓存处理后的数据
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -55,33 +48,42 @@ def process_data_value(value):
         return '0'
     return str(value).strip()
 
-def load_excel_data(file_path=None):
+def load_excel_data(file_data=None, filename=None):
     """读取Excel文件并返回社区/村数据"""
+    global current_file_data, current_filename, community_data_cache
+
     try:
-        # 如果没有指定文件路径，使用session中的文件
-        if file_path is None:
-            if 'current_excel_file' in session:
-                file_path = Path(session['current_excel_file'])
-            else:
+        # 如果没有指定文件数据，使用全局缓存
+        if file_data is None:
+            if current_file_data is None:
                 # 没有上传文件，返回空数据
                 return {}
+            file_data = current_file_data
+            filename = current_filename
+
+        # 检查缓存
+        cache_key = f"{filename}_{len(file_data) if file_data else 0}"
+        if cache_key in community_data_cache:
+            print(f"使用缓存数据: {filename}")
+            return community_data_cache[cache_key]
+
+        print(f"从内存数据处理Excel文件: {filename}")
+
+        # 从内存中的字节数据读取Excel
+        if isinstance(file_data, bytes):
+            df = pd.read_excel(io.BytesIO(file_data), header=0)
         else:
-            file_path = Path(file_path)
-
-        # 检查文件是否存在
-        if not file_path.exists():
-            print(f"文件不存在: {file_path}")
+            print("错误：文件数据格式不正确")
             return {}
-
-        # 读取Excel文件，将第一行作为header
-        # 使用str()确保路径在Windows下正确处理中文
-        df = pd.read_excel(str(file_path), header=0)
 
         # 获取实际的列名（第一行数据）
         header_row = df.iloc[0]  # 第一行数据就是列标题
 
         # 重新读取，跳过第一行，使用第二行开始的数据
-        df = pd.read_excel(str(file_path), header=None, skiprows=1)
+        if isinstance(file_data, bytes):
+            df = pd.read_excel(io.BytesIO(file_data), header=None, skiprows=1)
+        else:
+            return {}
 
         # 设置列名为第一行的内容
         df.columns = header_row.tolist()
@@ -127,6 +129,10 @@ def load_excel_data(file_path=None):
 
                 community_data[community_name] = community_info
 
+        # 缓存结果
+        community_data_cache[cache_key] = community_data
+        print(f"处理完成，找到 {len(community_data)} 个社区/村")
+
         return community_data
     except Exception as e:
         print(f"读取Excel文件出错: {e}")
@@ -134,7 +140,9 @@ def load_excel_data(file_path=None):
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    """处理Excel文件上传"""
+    """处理Excel文件上传 - 使用内存模式"""
+    global current_file_data, current_filename
+
     try:
         if 'file' not in request.files:
             return jsonify({'error': '没有文件被上传'}), 400
@@ -143,86 +151,85 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': '没有选择文件'}), 400
 
+        # 检查文件大小，限制为100MB
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)  # 重置文件指针
+
+        if file_size > app.config['MAX_CONTENT_LENGTH']:
+            return jsonify({'error': '文件太大，请上传不超过100MB的文件'}), 400
+
         if file and allowed_file(file.filename):
-            # 安全的文件名，保持中文字符
-            filename = file.filename
-            # 移除不安全字符但保留中文
-            import string
-            safe_chars = string.ascii_letters + string.digits + '.-_()[]{}（）【】中文'
-            filename = ''.join(c for c in filename if c.isalnum() or c in '.-_()[]{}（）【】' or ord(c) > 127)
+            # 获取原始文件名
+            original_filename = file.filename
+            print(f"开始处理文件：{original_filename}")
 
-            if not filename:
-                filename = 'uploaded_file.xlsx'
-
-            filepath = UPLOAD_FOLDER / filename
-
-            # 如果文件已存在，添加时间戳
-            if filepath.exists():
-                stem = filepath.stem
-                suffix = filepath.suffix
-                timestamp = int(time.time())
-                filepath = UPLOAD_FOLDER / f"{stem}_{timestamp}{suffix}"
-
-            # 保存文件
-            file.save(str(filepath))
-
-            # 将文件路径保存到session中
-            session['current_excel_file'] = str(filepath)
-
-            # 尝试读取文件以验证格式
             try:
-                data = load_excel_data(str(filepath))
+                # 直接读取文件内容到内存
+                file_data = file.read()
+                print(f"文件读取到内存成功，大小：{len(file_data)} 字节")
+
+                # 存储文件数据和文件名到全局变量
+                current_file_data = file_data
+                current_filename = original_filename
+
+                # 直接从内存数据加载并分析文件
+                data = load_excel_data(file_data=file_data, filename=original_filename)
                 community_count = len(data)
 
-                return jsonify({
-                    'success': True,
-                    'message': f'文件上传成功！找到 {community_count} 个社区/村数据',
-                    'filename': filename,
-                    'community_count': community_count
-                })
+                if community_count > 0:
+                    print(f"文件处理成功：{original_filename}，找到 {community_count} 个社区/村")
+                    return jsonify({
+                        'success': True,
+                        'message': f'文件上传成功！找到 {community_count} 个社区/村数据',
+                        'filename': original_filename,
+                        'community_count': community_count
+                    })
+                else:
+                    return jsonify({'error': '文件中没有找到有效的社区/村数据'}), 400
+
             except Exception as e:
-                # 删除无效文件
-                if filepath.exists():
-                    filepath.unlink()
+                print(f"处理文件时出错：{str(e)}")
                 return jsonify({'error': f'文件格式错误：{str(e)}'}), 400
         else:
             return jsonify({'error': '只支持 .xlsx 和 .xls 文件'}), 400
 
     except Exception as e:
+        print(f"上传过程出错：{str(e)}")
         return jsonify({'error': f'上传失败：{str(e)}'}), 500
 
 @app.route('/api/current-file')
 def get_current_file():
     """获取当前使用的Excel文件信息"""
+    global current_file_data, current_filename
+
     try:
-        if 'current_excel_file' not in session:
+        if current_file_data is None or current_filename is None:
             return jsonify({
-                'filename': None,
+                'filename': '请选择文件',
                 'community_count': 0,
                 'file_exists': False,
                 'message': '请先上传Excel文件'
             })
 
-        current_file = session['current_excel_file']
-        current_file_path = Path(current_file)
-        filename = current_file_path.name
+        # 从内存数据获取信息
+        data = load_excel_data()
+        community_count = len(data)
 
-        if current_file_path.exists():
-            data = load_excel_data(str(current_file_path))
-            community_count = len(data)
-            return jsonify({
-                'filename': filename,
-                'community_count': community_count,
-                'file_exists': True
-            })
-        else:
-            return jsonify({
-                'filename': filename,
-                'community_count': 0,
-                'file_exists': False
-            })
+        return jsonify({
+            'filename': current_filename,
+            'community_count': community_count,
+            'file_exists': True
+        })
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"获取文件信息失败: {str(e)}")
+        return jsonify({
+            'filename': current_filename or '未知文件',
+            'community_count': 0,
+            'file_exists': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/')
 def index():
@@ -241,8 +248,12 @@ def get_community_data(community_name):
 @app.route('/api/communities')
 def get_all_communities():
     """获取所有社区数据"""
-    data = load_excel_data()
-    return jsonify(data)
+    try:
+        data = load_excel_data()
+        return jsonify(data)
+    except Exception as e:
+        print(f"获取社区数据失败: {str(e)}")
+        return jsonify({})
 
 def open_browser():
     """延迟打开浏览器"""

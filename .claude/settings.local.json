@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(python3:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Read(//Users/xyy/git_syn/utils/qxy_app/**)",
+      "Bash(python:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []

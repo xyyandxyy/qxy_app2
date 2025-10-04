@@ -630,8 +630,10 @@
                     fileStatus.innerHTML = result.message;
 
                     // 更新当前文件信息
-                    document.getElementById('current-filename').textContent = result.filename;
-                    document.getElementById('community-count').textContent = result.community_count;
+                    const filenameEl = document.getElementById('current-filename');
+                    const countEl = document.getElementById('community-count');
+                    if (filenameEl) filenameEl.textContent = result.filename;
+                    if (countEl) countEl.textContent = result.community_count;
 
                     // 重新加载社区数据
                     await loadCommunityData();
@@ -660,22 +662,32 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    document.getElementById('current-filename').textContent = result.filename;
-                    document.getElementById('community-count').textContent = result.community_count;
+                    const filenameEl = document.getElementById('current-filename');
+                    const countEl = document.getElementById('community-count');
+                    if (filenameEl) filenameEl.textContent = result.filename;
+                    if (countEl) countEl.textContent = result.community_count;
 
                     if (result.file_exists) {
-                        document.getElementById('file-status').className = 'file-status success';
+                        const fileStatusEl = document.getElementById('file-status');
+                        if (fileStatusEl) fileStatusEl.className = 'file-status success';
                     } else {
-                        document.getElementById('file-status').className = 'file-status error';
+                        const fileStatusEl = document.getElementById('file-status');
+                        if (fileStatusEl) fileStatusEl.className = 'file-status error';
                     }
                 } else {
-                    document.getElementById('file-status').className = 'file-status error';
-                    document.getElementById('file-status').innerHTML = '获取文件信息失败';
+                    const fileStatusEl = document.getElementById('file-status');
+                    if (fileStatusEl) {
+                        fileStatusEl.className = 'file-status error';
+                        fileStatusEl.innerHTML = '获取文件信息失败';
+                    }
                 }
             } catch (error) {
                 console.error('获取当前文件信息失败:', error);
-                document.getElementById('file-status').className = 'file-status error';
-                document.getElementById('file-status').innerHTML = '获取文件信息失败';
+                const fileStatusEl = document.getElementById('file-status');
+                if (fileStatusEl) {
+                    fileStatusEl.className = 'file-status error';
+                    fileStatusEl.innerHTML = '获取文件信息失败';
+                }
             }
         }
 
@@ -726,7 +738,8 @@
 
         function updateZoomDisplay() {
             const percentage = Math.round(currentZoom * 100);
-            document.getElementById('zoom-percentage').textContent = percentage + '%';
+            const zoomEl = document.getElementById('zoom-percentage');
+            if (zoomEl) zoomEl.textContent = percentage + '%';
         }
 
         // 多选控制功能
@@ -765,8 +778,10 @@
             // 重置信息框显示状态
             infoBoxesVisible = true;
             const toggleBtn = document.getElementById('toggle-info-btn');
-            toggleBtn.textContent = '隐藏信息框';
-            toggleBtn.style.background = '#FF9800';
+            if (toggleBtn) {
+                toggleBtn.textContent = '隐藏信息框';
+                toggleBtn.style.background = '#FF9800';
+            }
 
             updateAggregatedInfo();
         }
@@ -829,7 +844,38 @@
                 while (linesOverlay.firstChild) {
                     linesOverlay.removeChild(linesOverlay.firstChild);
                 }
+                // 确保覆盖层可见
+                linesOverlay.style.display = 'block';
             }
+        }
+
+        // 重新创建所有引线
+        function recreateAllLines() {
+            if (!linesOverlay) {
+                initLinesOverlay();
+            }
+
+            // 清除现有引线
+            clearAllLines();
+
+            // 为所有存在的信息框重新创建引线
+            selectedCommunities.forEach(communityName => {
+                const infoData = infoBoxes.get(communityName);
+                if (infoData && infoData.element && !infoData.isHidden) {
+                    // 检查信息框是否实际可见
+                    const overlay = infoData.element;
+                    if (overlay && overlay.style.display !== 'none' && overlay.parentNode) {
+                        const overlayRect = overlay.getBoundingClientRect();
+                        const containerRect = document.getElementById('map-container').getBoundingClientRect();
+                        const overlayCenter = {
+                            x: parseInt(overlay.style.left) + overlayRect.width / 2,
+                            y: parseInt(overlay.style.top) + overlayRect.height / 2
+                        };
+                        const lineStartPoint = infoData.clickPosition || infoData.center;
+                        createLeaderLine(lineStartPoint, overlayCenter, communityName);
+                    }
+                }
+            });
         }
 
         // 清除所有柱状图
@@ -1302,6 +1348,8 @@
             const toggleBtn = document.getElementById('toggle-info-btn');
             const container = document.getElementById('map-container');
 
+            if (!toggleBtn) return; // 如果按钮不存在，直接返回
+
             if (infoBoxesVisible) {
                 // 隐藏所有信息框和引线
                 const existingOverlays = container.querySelectorAll('.map-info-overlay');
@@ -1324,16 +1372,18 @@
                 toggleBtn.textContent = '显示信息框';
                 toggleBtn.style.background = '#4CAF50';
             } else {
-                // 显示所有信息框和引线
+                // 显示所有信息框
                 const existingOverlays = container.querySelectorAll('.map-info-overlay');
                 existingOverlays.forEach(overlay => {
                     overlay.style.display = 'block';
                 });
 
-                // 显示所有引线
+                // 显示并重新创建所有引线
                 if (linesOverlay) {
                     linesOverlay.style.display = 'block';
                 }
+                // 重新创建所有引线以确保正确显示
+                recreateAllLines();
 
                 infoBoxesVisible = true;
                 toggleBtn.textContent = '隐藏信息框';
@@ -1584,7 +1634,9 @@
 
             // 创建引线 - 使用点击位置作为起点
             const lineStartPoint = existingInfo && existingInfo.clickPosition ? existingInfo.clickPosition : center;
-            createLeaderLine(lineStartPoint, { x: position.x + overlayWidth / 2, y: position.y + overlayHeight / 2 }, communityName);
+            if (infoBoxesVisible) {  // 只有在信息框可见时才创建引线
+                createLeaderLine(lineStartPoint, { x: position.x + overlayWidth / 2, y: position.y + overlayHeight / 2 }, communityName);
+            }
 
             return overlay;
         }
@@ -1833,6 +1885,13 @@
 
             // 重新绘制柱状图以反映选择变化
             redrawExistingCharts();
+
+            // 确保引线正确显示
+            setTimeout(() => {
+                if (infoBoxesVisible) {
+                    recreateAllLines();
+                }
+            }, 100);
         }
 
         // 更新聚合信息显示
@@ -1840,7 +1899,9 @@
             const infoDiv = document.getElementById('community-info');
             const selectedCountSpan = document.getElementById('selected-count');
 
-            selectedCountSpan.textContent = selectedCommunities.size;
+            if (selectedCountSpan) {
+                selectedCountSpan.textContent = selectedCommunities.size;
+            }
 
             // 清除地图上的信息显示
             clearMapInfoOverlays();

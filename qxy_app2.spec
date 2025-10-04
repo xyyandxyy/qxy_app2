@@ -9,7 +9,6 @@ a = Analysis(
     datas=[
         ('templates', 'templates'),
         ('static', 'static'),
-        ('uploads', 'uploads'),
     ],
     hiddenimports=[
         'pandas',
@@ -25,6 +24,8 @@ a = Analysis(
         'threading',
         'time',
         'webbrowser',
+        'uuid',
+        'io',
     ],
     hookspath=[],
     hooksconfig={},
@@ -52,11 +53,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=true,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='/Users/xyy/git_syn/utils/qxy_app2/favicon.ico',
 )

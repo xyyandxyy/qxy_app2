@@ -126,13 +126,13 @@ def load_excel_data(file_data=None, filename=None):
         for index, row in df.iterrows():
             community_name = str(row.iloc[0]).strip()
             print(f"[DEBUG] load_excel_data 检查第{index}行: {repr(community_name)}")
-            
+
+            # 获取列名
+            column_names = df.columns.tolist()
+
             if '社区' in community_name or '村' in community_name:
                 community_count += 1
                 print(f"[DEBUG] load_excel_data 找到社区/村 #{community_count}: {community_name}")
-                
-                # 获取列名
-                column_names = df.columns.tolist()
                 print(f"[DEBUG] load_excel_data 社区 {community_name} 的列名: {column_names}")
 
                 # 处理各列数据
@@ -158,28 +158,30 @@ def load_excel_data(file_data=None, filename=None):
                         print(f"[DEBUG] load_excel_data 列索引 {i} 超出行长度 {len(row)}")
             else:
                 print(f"[DEBUG] load_excel_data 第{index}行不是社区/村: {repr(community_name)}")
+                # 跳过非社区/村行
+                continue
 
-                # 保持向后兼容性，仍然提供原来的字段
-                print(f"[DEBUG] load_excel_data 为社区 {community_name} 设置向后兼容字段")
-                if len(column_names) > 1:
-                    community_info['column2'] = community_info['columns'].get(column_names[1], {}).get('raw_data', '0')
-                    community_info['people_count_col2'] = community_info['columns'].get(column_names[1], {}).get('people_count', 0)
-                    print(f"[DEBUG] load_excel_data column2: {community_info['column2']}, people_count_col2: {community_info['people_count_col2']}")
-                if len(column_names) > 2:
-                    community_info['column3'] = community_info['columns'].get(column_names[2], {}).get('raw_data', '0')
-                    community_info['people_count_col3'] = community_info['columns'].get(column_names[2], {}).get('people_count', 0)
-                    print(f"[DEBUG] load_excel_data column3: {community_info['column3']}, people_count_col3: {community_info['people_count_col3']}")
-                if len(column_names) > 3:
-                    community_info['column4'] = community_info['columns'].get(column_names[3], {}).get('raw_data', '0')
-                    community_info['people_count_col4'] = community_info['columns'].get(column_names[3], {}).get('people_count', 0)
-                    print(f"[DEBUG] load_excel_data column4: {community_info['column4']}, people_count_col4: {community_info['people_count_col4']}")
-                if len(column_names) > 4:
-                    community_info['column5'] = community_info['columns'].get(column_names[4], {}).get('raw_data', '0')
-                    community_info['people_count_col5'] = community_info['columns'].get(column_names[4], {}).get('people_count', 0)
-                    print(f"[DEBUG] load_excel_data column5: {community_info['column5']}, people_count_col5: {community_info['people_count_col5']}")
+            # 保持向后兼容性，仍然提供原来的字段
+            print(f"[DEBUG] load_excel_data 为社区 {community_name} 设置向后兼容字段")
+            if len(column_names) > 1:
+                community_info['column2'] = community_info['columns'].get(column_names[1], {}).get('raw_data', '0')
+                community_info['people_count_col2'] = community_info['columns'].get(column_names[1], {}).get('people_count', 0)
+                print(f"[DEBUG] load_excel_data column2: {community_info['column2']}, people_count_col2: {community_info['people_count_col2']}")
+            if len(column_names) > 2:
+                community_info['column3'] = community_info['columns'].get(column_names[2], {}).get('raw_data', '0')
+                community_info['people_count_col3'] = community_info['columns'].get(column_names[2], {}).get('people_count', 0)
+                print(f"[DEBUG] load_excel_data column3: {community_info['column3']}, people_count_col3: {community_info['people_count_col3']}")
+            if len(column_names) > 3:
+                community_info['column4'] = community_info['columns'].get(column_names[3], {}).get('raw_data', '0')
+                community_info['people_count_col4'] = community_info['columns'].get(column_names[3], {}).get('people_count', 0)
+                print(f"[DEBUG] load_excel_data column4: {community_info['column4']}, people_count_col4: {community_info['people_count_col4']}")
+            if len(column_names) > 4:
+                community_info['column5'] = community_info['columns'].get(column_names[4], {}).get('raw_data', '0')
+                community_info['people_count_col5'] = community_info['columns'].get(column_names[4], {}).get('people_count', 0)
+                print(f"[DEBUG] load_excel_data column5: {community_info['column5']}, people_count_col5: {community_info['people_count_col5']}")
 
-                community_data[community_name] = community_info
-                print(f"[DEBUG] load_excel_data 社区 {community_name} 数据处理完成")
+            community_data[community_name] = community_info
+            print(f"[DEBUG] load_excel_data 社区 {community_name} 数据处理完成")
             
             # 每处理10行输出一次进度
             if (index + 1) % 10 == 0:
@@ -393,10 +395,34 @@ def open_browser():
     webbrowser.open('http://localhost:5001')
     print(f"[INFO] open_browser 浏览器打开完成")
 
+def load_default_excel():
+    """启动时加载默认的test_data.xlsx文件"""
+    global current_file_data, current_filename
+
+    default_file_path = 'test_data.xlsx'
+    if os.path.exists(default_file_path):
+        print(f"[INFO] 找到默认Excel文件: {default_file_path}")
+        try:
+            with open(default_file_path, 'rb') as f:
+                current_file_data = f.read()
+                current_filename = default_file_path
+                print(f"[INFO] 默认Excel文件加载成功: {default_file_path}")
+
+                # 验证数据
+                data = load_excel_data()
+                print(f"[INFO] 默认文件包含 {len(data)} 个社区/村数据")
+        except Exception as e:
+            print(f"[ERROR] 加载默认Excel文件失败: {e}")
+    else:
+        print(f"[INFO] 未找到默认Excel文件: {default_file_path}")
+
 if __name__ == '__main__':
     print(f"[INFO] 应用启动开始")
     print(f"[DEBUG] Python版本: {sys.version}")
     print(f"[DEBUG] 工作目录: {os.getcwd()}")
+
+    # 加载默认Excel文件
+    load_default_excel()
     
     # 检查是否是打包后的exe
     if getattr(sys, 'frozen', False):

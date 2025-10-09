@@ -395,34 +395,13 @@ def open_browser():
     webbrowser.open('http://localhost:5001')
     print(f"[INFO] open_browser 浏览器打开完成")
 
-def load_default_excel():
-    """启动时加载默认的test_data.xlsx文件"""
-    global current_file_data, current_filename
-
-    default_file_path = 'test_data.xlsx'
-    if os.path.exists(default_file_path):
-        print(f"[INFO] 找到默认Excel文件: {default_file_path}")
-        try:
-            with open(default_file_path, 'rb') as f:
-                current_file_data = f.read()
-                current_filename = default_file_path
-                print(f"[INFO] 默认Excel文件加载成功: {default_file_path}")
-
-                # 验证数据
-                data = load_excel_data()
-                print(f"[INFO] 默认文件包含 {len(data)} 个社区/村数据")
-        except Exception as e:
-            print(f"[ERROR] 加载默认Excel文件失败: {e}")
-    else:
-        print(f"[INFO] 未找到默认Excel文件: {default_file_path}")
-
 if __name__ == '__main__':
     print(f"[INFO] 应用启动开始")
     print(f"[DEBUG] Python版本: {sys.version}")
     print(f"[DEBUG] 工作目录: {os.getcwd()}")
 
-    # 加载默认Excel文件
-    load_default_excel()
+    # 不自动加载默认Excel文件，保持未加载状态
+    print(f"[INFO] 应用启动，等待用户上传Excel文件")
     
     # 检查是否是打包后的exe
     if getattr(sys, 'frozen', False):

@@ -71,23 +71,10 @@ def load_excel_data(file_data=None, filename=None):
     print(f"[DEBUG] load_excel_data 参数 - file_data: {type(file_data)}, filename: {filename}")
 
     try:
-        # 如果没有指定文件数据，使用全局缓存
+        # 如果没有指定文件数据，返回空字典
         if file_data is None:
-            print(f"[DEBUG] load_excel_data 使用全局文件数据")
-            if current_file_data is None:
-                print(f"[DEBUG] load_excel_data 没有全局文件数据，返回空字典")
-                # 没有上传文件，返回空数据
-                return {}
-            file_data = current_file_data
-            filename = current_filename
-            print(f"[DEBUG] load_excel_data 使用全局数据: {filename}, 大小: {len(file_data) if file_data else 0} 字节")
-
-        # 检查缓存
-        cache_key = f"{filename}_{len(file_data) if file_data else 0}"
-        print(f"[DEBUG] load_excel_data 缓存键: {cache_key}")
-        if cache_key in community_data_cache:
-            print(f"[DEBUG] load_excel_data 使用缓存数据: {filename}")
-            return community_data_cache[cache_key]
+            print(f"[DEBUG] load_excel_data 没有文件数据，返回空字典")
+            return {}
 
         print(f"[DEBUG] load_excel_data 从内存数据处理Excel文件: {filename}")
 
@@ -187,9 +174,6 @@ def load_excel_data(file_data=None, filename=None):
             if (index + 1) % 10 == 0:
                 print(f"[DEBUG] load_excel_data 已处理 {index + 1}/{len(df)} 行")
 
-        # 缓存结果
-        community_data_cache[cache_key] = community_data
-        print(f"[DEBUG] load_excel_data 数据已缓存，缓存键: {cache_key}")
         print(f"[INFO] load_excel_data 处理完成，找到 {len(community_data)} 个社区/村")
         
         # 输出每个社区的基本信息
@@ -313,7 +297,7 @@ def get_current_file():
 
         # 从内存数据获取信息
         print(f"[DEBUG] get_current_file 调用load_excel_data获取数据")
-        data = load_excel_data()
+        data = load_excel_data(file_data=current_file_data, filename=current_filename)
         community_count = len(data)
         print(f"[DEBUG] get_current_file 获取到社区数量: {community_count}")
 
@@ -350,7 +334,7 @@ def get_community_data(community_name):
     print(f"[INFO] get_community_data API调用开始，社区名称: {community_name}")
     
     try:
-        data = load_excel_data()
+        data = load_excel_data(file_data=current_file_data, filename=current_filename)
         print(f"[DEBUG] get_community_data 获取到数据，社区总数: {len(data)}")
         print(f"[DEBUG] get_community_data 可用社区列表: {list(data.keys())}")
         
@@ -375,7 +359,7 @@ def get_all_communities():
     print(f"[INFO] get_all_communities API调用开始")
     
     try:
-        data = load_excel_data()
+        data = load_excel_data(file_data=current_file_data, filename=current_filename)
         community_count = len(data)
         print(f"[DEBUG] get_all_communities 获取到所有社区数据，数量: {community_count}")
         print(f"[DEBUG] get_all_communities 社区列表: {list(data.keys())}")

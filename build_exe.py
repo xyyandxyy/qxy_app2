@@ -41,6 +41,7 @@ a = Analysis(
         'pandas',
         'openpyxl',
         'flask',
+        'xlrd',
         'werkzeug',
         'jinja2',
         'click',

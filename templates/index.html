@@ -1289,7 +1289,19 @@
             Object.values(communityData).forEach(data => {
                 if (data.columns) {
                     Object.keys(data.columns).forEach(col => {
-                        if (col !== '社区名称' && col !== '名称') { // 排除名称列
+                        // 改进过滤逻辑：排除社区名称列和非数据列
+                        const lowerCol = col.toLowerCase();
+                        if (!lowerCol.includes('社区') &&
+                            !lowerCol.includes('村') &&
+                            !lowerCol.includes('村居') &&
+                            !lowerCol.includes('村委会') &&
+                            !lowerCol.includes('居委会') &&
+                            col !== '名称' &&
+                            col !== '社区名称' &&
+                            col !== '村名' &&
+                            col !== '地址' &&
+                            col !== '单位' &&  // 排除单位列，因为它通常是社区名称
+                            col.trim() !== '') { // 确保不是空列名
                             columns.add(col);
                         }
                     });

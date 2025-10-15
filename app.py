@@ -72,7 +72,7 @@ def find_best_column_match(column_name, candidates):
 def detect_header_row(df):
     """智能检测表头行位置"""
     # 检查前5行，寻找包含最多关键词的行
-    key_indicators = ['姓名', '村居', '社区', '村', '年龄', '金额', '电话', '身份证']
+    key_indicators = ['姓名', '村居', '社区', '村', '年龄', '金额', '电话', '身份证', '单位', '人', '户', '特困', '低保', '边缘']
 
     best_row = 0
     best_score = 0
@@ -80,11 +80,42 @@ def detect_header_row(df):
     for i in range(min(5, len(df))):
         row = df.iloc[i]
         score = 0
+        non_empty_count = 0
+        header_like_count = 0  # 类似表头的单元格数量
+
         for cell in row:
             cell_str = str(cell).strip()
-            for indicator in key_indicators:
-                if indicator in cell_str:
-                    score += 1
+            if cell_str and cell_str != 'nan':
+                non_empty_count += 1
+
+                # 检查关键词
+                for indicator in key_indicators:
+                    if indicator in cell_str:
+                        score += 3  # 提高关键词权重
+
+                # 检查是否像表头：短小的中文词汇，且不包含数据特征
+                if (1 <= len(cell_str) <= 15 and
+                    any('\u4e00' <= c <= '\u9fff' for c in cell_str) and
+                    not any(char in cell_str for char in ['户', '人', '元', '万', '千']) and  # 不包含数据特征
+                    not cell_str.endswith('社区') and  # 不是社区名
+                    not cell_str.endswith('村') and   # 不是村名
+                    len(cell_str.strip()) <= 8):  # 较短的词汇更像表头
+                    header_like_count += 1
+                    score += 3
+
+                # 如果包含数据特征，降低得分
+                if any(char in cell_str for char in ['户', '人', '元']):
+                    score -= 1
+
+        # 如果大部分单元格都像表头，给额外加分
+        if header_like_count >= len(row) * 0.6:  # 60%以上的单元格像表头
+            score += 5
+
+        # 考虑非空单元格的比例
+        if non_empty_count >= len(row) * 0.6:  # 至少60%的单元格有内容
+            score += 2
+
+        print(f"[INFO] 第{i+1}行得分: {score}, 非空单元格: {non_empty_count}, 表头样单元格: {header_like_count}")
 
         if score > best_score:
             best_score = score
@@ -245,8 +276,39 @@ def load_excel_data(file_data=None, filename=None):
             except:
                 df = pd.read_excel(io.BytesIO(file_data), header=header_row_index, engine='xlrd')
 
-        # 处理列名，去除空格和特殊字符
-        df.columns = [str(col).strip() for col in df.columns]
+        # 处理列名，去除空格和特殊字符，处理无意义的列名
+        processed_columns = []
+        for i, col in enumerate(df.columns):
+            col_str = str(col).strip()
+            # 如果是Unnamed列或者是长标题，尝试从数据中提取有意义的列名
+            if col_str.startswith('Unnamed:') or len(col_str) > 30 or 'Unnamed' in col_str:
+                # 检查前几行数据是否可以作为列名
+                found_header = False
+                for row_idx in range(min(3, len(df))):
+                    try:
+                        potential_header = str(df.iloc[row_idx, i]).strip()
+                        if (potential_header and
+                            potential_header != 'nan' and
+                            len(potential_header) < 20 and
+                            any('\u4e00' <= c <= '\u9fff' for c in potential_header)):  # 包含中文
+                            processed_columns.append(potential_header)
+                            found_header = True
+                            break
+                    except:
+                        continue
+
+                if not found_header:
+                    # 生成默认列名
+                    processed_columns.append(f'列{i+1}')
+            else:
+                # 清理现有列名
+                clean_name = col_str.replace('Unnamed:', '').strip()
+                if clean_name and len(clean_name) < 30:
+                    processed_columns.append(clean_name)
+                else:
+                    processed_columns.append(f'列{i+1}')
+
+        df.columns = processed_columns
         print(f"[INFO] 处理后数据形状: {df.shape}")
         print(f"[INFO] 列名: {df.columns.tolist()}")
 
@@ -516,6 +578,75 @@ def get_data_quality():
     except Exception as e:
         print(f"[ERROR] 获取数据质量报告失败: {str(e)}")
         return jsonify({'error': f'获取数据质量报告失败：{str(e)}'}), 500
+
+@app.route('/test')
+def test_page():
+    """测试页面"""
+    return '''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>测试列名显示</title>
+</head>
+<body>
+    <h1>列名显示测试</h1>
+    <div id="result">加载中...</div>
+
+    <script>
+        // 模拟前端逻辑
+        fetch('/api/communities')
+            .then(response => response.json())
+            .then(data => {
+                console.log('获取到的数据:', data);
+
+                // 模拟updateColumnSelector逻辑
+                const columns = new Set();
+                Object.values(data).forEach(communityData => {
+                    if (communityData.columns) {
+                        Object.keys(communityData.columns).forEach(col => {
+                            // 应用过滤逻辑
+                            const lowerCol = col.toLowerCase();
+                            if (!lowerCol.includes('社区') &&
+                                !lowerCol.includes('村') &&
+                                !lowerCol.includes('村居') &&
+                                !lowerCol.includes('村委会') &&
+                                !lowerCol.includes('居委会') &&
+                                col !== '名称' &&
+                                col !== '社区名称' &&
+                                col !== '村名' &&
+                                col !== '地址' &&
+                                col !== '单位' &&  // 排除单位列
+                                col.trim() !== '') {
+                                columns.add(col);
+                            }
+                        });
+                    }
+                });
+
+                const availableColumns = Array.from(columns).sort();
+
+                // 显示结果
+                let html = '<h2>可用的数据列：</h2><ul>';
+                availableColumns.forEach((col, index) => {
+                    html += `<li>${index + 1}. ${col}</li>`;
+                });
+                html += `</ul><p>总计: ${availableColumns.length} 个数据列</p>`;
+
+                // 显示第一个社区的完整数据结构
+                const firstCommunity = Object.keys(data)[0];
+                const firstData = data[firstCommunity];
+                html += `<h2>示例数据结构 (${firstCommunity})：</h2><pre>`;
+                html += JSON.stringify(firstData.columns, null, 2);
+                html += '</pre>';
+
+                document.getElementById('result').innerHTML = html;
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = `<p style="color: red;">错误: ${error}</p>`;
+            });
+    </script>
+</body>
+</html>'''
 
 @app.route('/')
 def index():
